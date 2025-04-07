@@ -1,14 +1,78 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { WiAlien } from "react-icons/wi";
 
 const Login = () => {
+  const navigate = useNavigate();
   const [{ email, password }, setForm] = useState({
     email: "",
     password: "",
   });
   const [loading, setLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+
+  // Check if user is already logged in and load saved email from localStorage
+  useEffect(() => {
+    // Check for saved email in localStorage
+    const savedEmail = localStorage.getItem("savedEmail");
+    if (savedEmail) {
+      setForm(prev => ({ ...prev, email: savedEmail }));
+      setRememberMe(true);
+    }
+
+    // Check if user is already logged in
+    const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+    if (token) {
+      // Validate token with the API
+      validateToken(token);
+    }
+  }, [navigate]);
+
+  // Function to validate token with the API
+  const validateToken = async (token) => {
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api/users/login";
+      
+      const response = await fetch(`${API_URL}/api/users/login`, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+      
+      if (response.ok) {
+        // Token is valid, redirect to dashboard
+        const userData = JSON.parse(localStorage.getItem("user") || sessionStorage.getItem("user") || "{}");
+        
+        // Set user data in global state if you have a state management solution
+        // For example, if using Context API or Redux
+        // setUser(userData);
+        
+        // Redirect to dashboard with user data
+        navigate("/dashboard", { 
+          state: { 
+            user: userData,
+            fromLogin: true 
+          } 
+        });
+      } else {
+        // Token is invalid, remove it
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        sessionStorage.removeItem("token");
+        sessionStorage.removeItem("user");
+      }
+    } catch (err) {
+      // Error validating token, remove it
+      console.error("Token validation error:", err.message);
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      sessionStorage.removeItem("token");
+      sessionStorage.removeItem("user");
+    }
+  };
 
   const handleChange = (e) =>
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -18,9 +82,74 @@ const Login = () => {
       e.preventDefault();
       if (!email || !password) throw new Error("All fields are required");
       setLoading(true);
-      console.log(email, password);
+      
+      // API endpoint for login
+      const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api/users/login";
+      
+      // Send login request to the API
+      const response = await fetch(`${API_URL}/api/users/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      });
+      
+      const data = await response.json();
+      
+      // Check if the response is successful
+      if (!response.ok) {
+        throw new Error(data.message || "Login failed");
+      }
+      
+      // Save email to localStorage if remember me is checked
+      if (rememberMe) {
+        localStorage.setItem("savedEmail", email);
+      } else {
+        localStorage.removeItem("savedEmail");
+      }
+      
+      // Prepare user data
+      const userData = {
+        id: data._id,
+        email: data.email,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        role: data.role
+      };
+      
+      // Store token in localStorage or sessionStorage based on remember me
+      if (rememberMe) {
+        localStorage.setItem("token", data.token);
+        localStorage.setItem("user", JSON.stringify(userData));
+      } else {
+        sessionStorage.setItem("token", data.token);
+        sessionStorage.setItem("user", JSON.stringify(userData));
+      }
+      
+      // Set user data in global state if you have a state management solution
+      // For example, if using Context API or Redux
+      // setUser(userData);
+      
+      // Show success message
+      toast.success("Login successful! Redirecting to dashboard...");
+      
+      // Redirect to dashboard with user data
+      navigate("/dashboard", { 
+        state: { 
+          user: userData,
+          fromLogin: true 
+        } 
+      });
     } catch (error) {
-      toast.error(error.message);
+      // Handle specific error messages
+      if (error.message.includes("Invalid credentials")) {
+        toast.error("Invalid email or password");
+      } else if (error.message.includes("User not found")) {
+        toast.error("No account found with this email");
+      } else {
+        toast.error(error.message || "Login failed. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -91,9 +220,18 @@ const Login = () => {
                   placeholder="••••••••"
                 />
               </label>
-              <label className="label">
+              <div className="flex justify-between items-center">
+                <label className="label cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    className="checkbox checkbox-sm mr-2" 
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                  />
+                  <span className="label-text">Remember me</span>
+                </label>
                 <a href="#" className="label-text-alt link link-hover">Forgot password?</a>
-              </label>
+              </div>
             </div>
             
             <div className="form-control mt-6">
