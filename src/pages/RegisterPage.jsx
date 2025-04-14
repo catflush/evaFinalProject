@@ -1,18 +1,30 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { WiAlien } from "react-icons/wi";
+import { useUser } from "../context/useUser";
 
 const Register = () => {
-  const [{ firstName, lastName, email, password, confirmPassword }, setForm] =
+  const navigate = useNavigate();
+  const { register, user } = useUser();
+  const [{ firstName, lastName, email, password, confirmPassword, phone }, setForm] =
     useState({
       firstName: "",
       lastName: "",
       email: "",
       password: "",
       confirmPassword: "",
+      phone: ""
     });
   const [loading, setLoading] = useState(false);
+  const [agreeToTerms, setAgreeToTerms] = useState(false);
+  
+  // Move navigation logic to useEffect
+  useEffect(() => {
+    if (user) {
+      navigate("/dashboard");
+    }
+  }, [user, navigate]);
   
   const handleChange = (e) =>
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -24,10 +36,33 @@ const Register = () => {
         throw new Error("All fields are required");
       if (password !== confirmPassword)
         throw new Error("Passwords do not match");
+      if (!agreeToTerms)
+        throw new Error("You must agree to the Terms and Privacy Policy");
+        
       setLoading(true);
-      console.log(firstName, lastName, email, password, confirmPassword);
+      
+      // Use the register function from UserContext
+      const userData = await register({
+        firstName,
+        lastName,
+        email,
+        password,
+        confirmPassword,
+        phone: phone || null
+      });
+      
+      // Show success message
+      toast.success("Registration successful! Redirecting to dashboard...");
+      
+      // Redirect to dashboard with user data
+      navigate("/dashboard", { 
+        state: { 
+          user: userData,
+          fromRegister: true 
+        } 
+      });
     } catch (error) {
-      toast.error(error.message);
+      toast.error(error.message || "Registration failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -40,10 +75,13 @@ const Register = () => {
           <div className="flex flex-col items-center mb-6">
             <div className="flex items-center gap-2 mb-2">
               <WiAlien className="h-8 w-8 text-primary" />
-              <span className="text-2xl font-bold text-primary">Make.io</span>
+              <span className="text-2xl font-bold text-primary">Maker.io</span>
             </div>
             <h2 className="text-3xl font-bold text-center">Create Your Account</h2>
-            <p className="text-center text-base-content/70 mt-2">Join our community of makers and creators</p>
+            <h3 className="text-center text-base-content/70 mt-2"> Whether your passion is baking, DIY, or coding, Maker.io has the tools to turn your individual expertise into engaging courses. From live sessions and Q&As to personalized coaching, everything you need is right at your fingertips - no matter your niche. Join our community of makers and creators</h3>
+            <p className="text-center text-base-content/70 mt-2">
+            Connect with like-minded creators, share knowledge, and collaborate on exciting projects in a vibrant and inclusive community.
+            </p>
           </div>
           
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -97,6 +135,25 @@ const Register = () => {
 
             <div className="form-control">
               <label className="label">
+                <span className="label-text">Phone Number</span>
+              </label>
+              <label className="input input-bordered flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="h-4 w-4 opacity-70">
+                  <path d="M3.5 2A1.5 1.5 0 0 0 2 3.5v2.879a2.5 2.5 0 0 0 .732 1.767l6.5 6.5a2.5 2.5 0 0 0 3.536 0l2.878-2.878a2.5 2.5 0 0 0 0-3.536l-6.5-6.5A2.5 2.5 0 0 0 6.38 2H3.5ZM4 3.5a.5.5 0 0 1 .5-.5h2.878a1.5 1.5 0 0 1 1.06.44l6.5 6.5a1.5 1.5 0 0 1 0 2.12l-2.878 2.878a1.5 1.5 0 0 1-2.12 0l-6.5-6.5A1.5 1.5 0 0 1 4 6.38V3.5Z" />
+                </svg>
+                <input
+                  name="phone"
+                  value={phone}
+                  onChange={handleChange}
+                  type="tel"
+                  className="grow"
+                  placeholder="Enter your phone number"
+                />
+              </label>
+            </div>
+
+            <div className="form-control">
+              <label className="label">
                 <span className="label-text">Password</span>
               </label>
               <label className="input input-bordered flex items-center gap-2">
@@ -136,7 +193,12 @@ const Register = () => {
             <div className="form-control">
               <label className="label cursor-pointer">
                 <span className="label-text">I agree to the <Link to="/terms" className="link link-primary">Terms</Link> and <Link to="/privacy" className="link link-primary">Privacy Policy</Link></span>
-                <input type="checkbox" className="checkbox checkbox-primary checkbox-sm" />
+                <input 
+                  type="checkbox" 
+                  className="checkbox checkbox-primary checkbox-sm" 
+                  checked={agreeToTerms}
+                  onChange={(e) => setAgreeToTerms(e.target.checked)}
+                />
               </label>
             </div>
 

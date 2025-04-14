@@ -1,39 +1,62 @@
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 import { WiAlien } from "react-icons/wi";
+import { useUser } from "../../context/useUser";
+import { FaUser, FaSignOutAlt, FaTachometerAlt } from "react-icons/fa";
 
 const NavBar = () => {
+  const { user, logout, } = useUser();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate("/");
+  };
+
   return (
     <div className="navbar bg-primary text-primary-content">
       <div className="navbar-start">
-        <div className="dropdown">
-          <div tabIndex={0} role="button" className="btn btn-ghost lg:hidden">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h8m-8 6h16" />
-            </svg>
-          </div>
-          <ul tabIndex={0} className="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-neutral rounded-box w-52">
-            <li><Link to="/about" className="text-neutral-content">About</Link></li>
-            <li><Link to="/features" className="text-neutral-content">Features</Link></li>
-            <li><Link to="/blog" className="text-neutral-content">Blog</Link></li>
-            <li><Link to="/booking" className="text-neutral-content">Booking</Link></li>
-          </ul>
-        </div>
-        <Link to="/" className="btn btn-ghost text-xl">
+        <Link to={user ? "/dashboard" : "/"} className="btn btn-ghost text-xl">
           <WiAlien className="h-6 w-6" />
-          <span className="font-bold">Make.</span>
+          <span className="font-bold">Maker.io</span>
         </Link>
       </div>
       <div className="navbar-center hidden lg:flex">
         <ul className="menu menu-horizontal px-1">
-          <li><NavLink to="/about" className="text-primary-content hover:text-accent">About</NavLink></li>
-          <li><NavLink to="/features" className="text-primary-content hover:text-accent">Features</NavLink></li>
-          <li><NavLink to="/blog" className="text-primary-content hover:text-accent">Blog</NavLink></li>
-          <li><NavLink to="/booking" className="text-primary-content hover:text-accent">Booking</NavLink></li>
+        
         </ul>
       </div>
       <div className="navbar-end">
-        <NavLink to="/login" className="btn btn-ghost">Log In</NavLink>
-        <NavLink to="/signup" className="btn btn-accent text-accent-content">Sign up</NavLink>
+        {user ? (
+          <div className="dropdown dropdown-end">
+            <div tabIndex={0} role="button" className="btn btn-ghost btn-circle avatar">
+              <div className="w-10 rounded-full bg-accent flex items-center justify-center">
+                <span className="text-accent-content font-bold">
+                  {user.firstName ? user.firstName.charAt(0) : 'U'}
+                </span>
+              </div>
+            </div>
+            <ul tabIndex={0} className="mt-3 z-[1] p-2 shadow menu menu-sm dropdown-content bg-neutral rounded-box w-52">
+              <li className="text-neutral-content font-medium px-4 py-2">
+                {user.firstName} {user.lastName}
+              </li>
+              <li>
+                <Link to="/dashboard/profile" className="text-neutral-content gap-2">
+                  <FaUser className="h-4 w-4" />
+                  Profile
+                </Link>
+              </li>
+              <li><button onClick={handleLogout} className="text-neutral-content gap-2">
+                <FaSignOutAlt className="h-4 w-4" />
+                Logout
+              </button></li>
+            </ul>
+          </div>
+        ) : (
+          <>
+            <NavLink to="/login" className="btn btn-ghost">Log In</NavLink>
+            <NavLink to="/register" className="btn btn-accent text-accent-content">Sign up</NavLink>
+          </>
+        )}
       </div>
     </div>
   );

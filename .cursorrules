@@ -151,7 +151,6 @@ Tech Stack:
 Backend: Node.js with Express.js  
 Database: MongoDB with Mongoose ODM  
 Frontend: React.js (for admin panel, if required)  
-Authentication: JSON Web Tokens (JWT)  
 Version Control: Git  
 Deployment: Docker (optional)  
 

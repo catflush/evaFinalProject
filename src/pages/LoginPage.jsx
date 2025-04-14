@@ -1,14 +1,39 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { WiAlien } from "react-icons/wi";
+import { useUser } from "../context/useUser";
 
 const Login = () => {
+  const navigate = useNavigate();
+  const { login, user } = useUser();
   const [{ email, password }, setForm] = useState({
     email: "",
     password: "",
   });
   const [loading, setLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+
+  // Check if user is already logged in and load saved email from localStorage
+  useEffect(() => {
+    // Check for saved email in localStorage
+    const savedEmail = localStorage.getItem("savedEmail");
+    if (savedEmail) {
+      setForm(prev => ({ ...prev, email: savedEmail }));
+      setRememberMe(true);
+    }
+
+    // Check if user is already logged in
+    if (user) {
+      // User is already logged in, redirect to dashboard
+      navigate("/dashboard", { 
+        state: { 
+          user,
+          fromLogin: true 
+        } 
+      });
+    }
+  }, [navigate, user]);
 
   const handleChange = (e) =>
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -18,9 +43,77 @@ const Login = () => {
       e.preventDefault();
       if (!email || !password) throw new Error("All fields are required");
       setLoading(true);
-      console.log(email, password);
+      
+      // Use the login function from UserContext
+      const userData = await login(email, password);
+      
+      // Save email to localStorage if remember me is checked
+      if (rememberMe) {
+        localStorage.setItem("savedEmail", email);
+      } else {
+        localStorage.removeItem("savedEmail");
+      }
+      
+      // Show success message with user's name
+      toast.success(`Welcome back, ${userData.firstName || 'User'}!`, {
+        position: "top-right",
+        autoClose: 3000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "light",
+        className: "bg-success text-success-content",
+      });
+      
+      // Redirect to dashboard with user data
+      navigate("/dashboard", { 
+        state: { 
+          user: userData,
+          fromLogin: true 
+        } 
+      });
     } catch (error) {
-      toast.error(error.message);
+      console.error('Login error:', error);
+      // Handle specific error messages
+      if (error.message.includes("Invalid credentials")) {
+        toast.error("Invalid email or password", {
+          position: "top-right",
+          autoClose: 3000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+          progress: undefined,
+          theme: "light",
+          className: "bg-error text-error-content",
+        });
+      } else if (error.message.includes("User not found")) {
+        toast.error("No account found with this email", {
+          position: "top-right",
+          autoClose: 3000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+          progress: undefined,
+          theme: "light",
+          className: "bg-error text-error-content",
+        });
+      } else {
+        toast.error(error.message || "Login failed. Please try again.", {
+          position: "top-right",
+          autoClose: 3000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+          progress: undefined,
+          theme: "light",
+          className: "bg-error text-error-content",
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -91,9 +184,18 @@ const Login = () => {
                   placeholder="••••••••"
                 />
               </label>
-              <label className="label">
+              <div className="flex justify-between items-center">
+                <label className="label cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    className="checkbox checkbox-sm mr-2" 
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                  />
+                  <span className="label-text">Remember me</span>
+                </label>
                 <a href="#" className="label-text-alt link link-hover">Forgot password?</a>
-              </label>
+              </div>
             </div>
             
             <div className="form-control mt-6">
@@ -114,9 +216,9 @@ const Login = () => {
           
           <div className="text-center mt-2">
             <p className="text-sm">
-              Don&apos;t have an account?{" "}
-              <Link to="/signup" className="link link-primary font-medium">
-                Create one now
+              Don't have an account?{" "}
+              <Link to="/register" className="link link-primary font-medium">
+                Sign up
               </Link>
             </p>
           </div>
