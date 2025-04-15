@@ -44,6 +44,13 @@ const CommunityPage = () => {
         formData.append('image', newPost.image);
       }
 
+      // Log form data for debugging
+      console.log('Submitting post with:', {
+        content: newPost.content,
+        hasImage: !!newPost.image,
+        imageName: newPost.image?.name
+      });
+
       await createPost(formData);
       
       // Reset form

@@ -20,6 +20,16 @@ export const PostProvider = ({ children }) => {
 
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
+  // Helper function to ensure image URLs are properly constructed
+  const getFullImageUrl = (imagePath) => {
+    if (!imagePath) return null;
+    if (imagePath.startsWith('http')) return imagePath;
+    
+    // Remove any leading slashes and 'uploads/' prefix to avoid duplicates
+    const cleanPath = imagePath.replace(/^\/+/, '').replace(/^uploads\//, '');
+    return `${API_URL.replace(/\/api$/, '')}/uploads/${cleanPath}`;
+  };
+
   const fetchPosts = useCallback(async () => {
     try {
       setLoading(true);
@@ -42,7 +52,7 @@ export const PostProvider = ({ children }) => {
       // Ensure image URLs are properly constructed
       const postsWithFullImageUrls = data.map(post => ({
         ...post,
-        image: post.image ? (post.image.startsWith('http') ? post.image : `${API_URL}${post.image}`) : null
+        image: getFullImageUrl(post.image)
       }));
       
       setPosts(postsWithFullImageUrls);
@@ -75,32 +85,18 @@ export const PostProvider = ({ children }) => {
         body: formData
       });
 
-      // Log the response for debugging
-      console.log('Server response:', {
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries())
-      });
-
-      // Get the response text first to check if it's JSON
-      const responseText = await response.text();
-      console.log('Raw response:', responseText);
-
-      let newPost;
-      try {
-        newPost = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('Failed to parse response as JSON:', parseError);
-        throw new Error('Server returned invalid response format');
-      }
-
       if (!response.ok) {
-        throw new Error(newPost.message || 'Failed to create post');
+        const errorData = await response.json();
+        console.error('Server error response:', errorData);
+        throw new Error(errorData.message || 'Failed to create post');
       }
 
+      const newPost = await response.json();
+      console.log('Created post:', newPost);
+      
       // Ensure the image URL is properly constructed
       if (newPost.image) {
-        newPost.image = `${API_URL}${newPost.image}`;
+        newPost.image = getFullImageUrl(newPost.image);
       }
       
       setPosts(prevPosts => [newPost, ...prevPosts]);
@@ -116,65 +112,43 @@ export const PostProvider = ({ children }) => {
     }
   }, [user?.token, API_URL]);
 
-  const likePost = useCallback(async (postId) => {
+  const updatePost = useCallback(async (postId, postData) => {
     try {
       setLoading(true);
       setError(null);
-
-      const response = await fetch(`${API_URL}/posts/${postId}/like`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${user?.token}`
-        }
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to like post');
+      
+      const formData = new FormData();
+      formData.append('content', postData.content);
+      if (postData.image) {
+        formData.append('image', postData.image);
       }
 
-      const updatedPost = await response.json();
-      console.log('Liked post:', updatedPost);
-      setPosts(prevPosts => 
-        prevPosts.map(post => post._id === postId ? updatedPost : post)
-      );
-    } catch (error) {
-      console.error('Error liking post:', error);
-      setError(error.message);
-      toast.error(error.message);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  }, [user?.token, API_URL]);
-
-  const addComment = useCallback(async (postId, content) => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await fetch(`${API_URL}/posts/${postId}/comment`, {
-        method: 'POST',
+      const response = await fetch(`${API_URL}/api/posts/${postId}`, {
+        method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
           'Authorization': `Bearer ${user?.token}`
         },
-        body: JSON.stringify({ content })
+        body: formData
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to add comment');
+        throw new Error(errorData.message || 'Failed to update post');
       }
 
       const updatedPost = await response.json();
-      console.log('Added comment:', updatedPost);
+      
+      // Ensure the image URL is properly constructed
+      if (updatedPost.image) {
+        updatedPost.image = getFullImageUrl(updatedPost.image);
+      }
+      
       setPosts(prevPosts => 
         prevPosts.map(post => post._id === postId ? updatedPost : post)
       );
-      toast.success('Comment added successfully');
+      toast.success('Post updated successfully');
+      return updatedPost;
     } catch (error) {
-      console.error('Error adding comment:', error);
       setError(error.message);
       toast.error(error.message);
       throw error;
@@ -212,37 +186,63 @@ export const PostProvider = ({ children }) => {
     }
   }, [user?.token, API_URL]);
 
-  const updatePost = useCallback(async (postId, postData) => {
+  const likePost = useCallback(async (postId) => {
     try {
       setLoading(true);
       setError(null);
-      
-      const formData = new FormData();
-      formData.append('content', postData.content);
-      if (postData.image) {
-        formData.append('image', postData.image);
-      }
 
-      const response = await fetch(`${API_URL}/posts/${postId}`, {
-        method: 'PUT',
+      const response = await fetch(`${API_URL}/posts/${postId}/like`, {
+        method: 'POST',
         headers: {
           'Authorization': `Bearer ${user?.token}`
-        },
-        body: formData
+        }
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to update post');
+        throw new Error(errorData.message || 'Failed to like post');
       }
 
       const updatedPost = await response.json();
       setPosts(prevPosts => 
         prevPosts.map(post => post._id === postId ? updatedPost : post)
       );
-      toast.success('Post updated successfully');
-      return updatedPost;
     } catch (error) {
+      console.error('Error liking post:', error);
+      setError(error.message);
+      toast.error(error.message);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.token, API_URL]);
+
+  const addComment = useCallback(async (postId, content) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch(`${API_URL}/posts/${postId}/comment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user?.token}`
+        },
+        body: JSON.stringify({ content })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to add comment');
+      }
+
+      const updatedPost = await response.json();
+      setPosts(prevPosts => 
+        prevPosts.map(post => post._id === postId ? updatedPost : post)
+      );
+      toast.success('Comment added successfully');
+    } catch (error) {
+      console.error('Error adding comment:', error);
       setError(error.message);
       toast.error(error.message);
       throw error;
@@ -262,21 +262,21 @@ export const PostProvider = ({ children }) => {
     loading,
     error,
     createPost,
-    likePost,
-    addComment,
     deletePost,
     updatePost,
-    fetchPosts
+    fetchPosts,
+    likePost,
+    addComment
   }), [
     posts,
     loading,
     error,
     createPost,
-    likePost,
-    addComment,
     deletePost,
     updatePost,
-    fetchPosts
+    fetchPosts,
+    likePost,
+    addComment
   ]);
 
   return (

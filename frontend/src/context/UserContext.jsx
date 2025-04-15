@@ -1,10 +1,7 @@
 import { createContext, useState, useEffect } from 'react';
 
-// Get API URL from environment variables
-const API_URL = import.meta.env.VITE_API_URL;
-if (!API_URL) {
-  throw new Error("API URL is required, are you missing a .env file?");
-}
+// Get API URL from environment variables with fallback
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/';
 
 // Create the context
 export const UserContext = createContext();
