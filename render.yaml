@@ -29,7 +29,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: VITE_API_URL
-        value: https://eva-project-backend.onrender.com
+        value: https://evafinalproject-1-backend.onrender.com
       - key: PORT
         value: 3000
     healthCheckPath: /
