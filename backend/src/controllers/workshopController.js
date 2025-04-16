@@ -2,6 +2,51 @@ import Workshop from '../models/Workshop.js';
 import Joi from 'joi';
 import fs from 'fs';
 import mongoose from 'mongoose';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Get the directory name
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Define the base uploads directory
+const BASE_UPLOADS_DIR = path.join(__dirname, '../../uploads');
+const WORKSHOPS_UPLOADS_DIR = path.join(BASE_UPLOADS_DIR, 'workshops');
+
+// Create uploads directories if they don't exist
+if (!fs.existsSync(BASE_UPLOADS_DIR)) {
+  fs.mkdirSync(BASE_UPLOADS_DIR, { recursive: true });
+  console.log('Created base uploads directory:', BASE_UPLOADS_DIR);
+}
+
+if (!fs.existsSync(WORKSHOPS_UPLOADS_DIR)) {
+  fs.mkdirSync(WORKSHOPS_UPLOADS_DIR, { recursive: true });
+  console.log('Created workshops uploads directory:', WORKSHOPS_UPLOADS_DIR);
+}
+
+// Helper function to process attachments
+const processAttachments = (files) => {
+  if (!files || files.length === 0) return [];
+  
+  return files.map(file => ({
+    filename: file.originalname,
+    path: `workshops/${file.filename}`,
+    mimetype: file.mimetype,
+    size: file.size
+  }));
+};
+
+// Helper function to delete attachments
+const deleteAttachments = async (attachments) => {
+  if (!attachments || attachments.length === 0) return;
+  
+  for (const attachment of attachments) {
+    const filePath = path.join(BASE_UPLOADS_DIR, attachment.path);
+    if (fs.existsSync(filePath)) {
+      await fs.promises.unlink(filePath);
+    }
+  }
+};
 
 // Validation schemas
 const workshopValidationSchema = Joi.object({
@@ -13,7 +58,6 @@ const workshopValidationSchema = Joi.object({
     'string.empty': 'Description is required',
     'any.required': 'Description is required'
   }),
-
   date: Joi.date().required().messages({
     'date.base': 'Valid date is required',
     'any.required': 'Date is required'
@@ -43,6 +87,50 @@ const workshopValidationSchema = Joi.object({
   location: Joi.string(),
   equipment: Joi.array().items(Joi.string()),
   materials: Joi.array().items(Joi.string())
+});
+
+// Separate validation schema for updates where fields are optional
+const workshopUpdateValidationSchema = Joi.object({
+  title: Joi.string().allow('').optional().messages({
+    'string.empty': 'Title cannot be empty if provided'
+  }),
+  description: Joi.string().allow('').optional().messages({
+    'string.empty': 'Description cannot be empty if provided'
+  }),
+  date: Joi.date().optional().messages({
+    'date.base': 'Valid date is required if provided'
+  }),
+  time: Joi.string().allow('').optional().messages({
+    'string.empty': 'Time cannot be empty if provided'
+  }),
+  duration: Joi.string().allow('').optional().messages({
+    'string.empty': 'Duration cannot be empty if provided'
+  }),
+  maxParticipants: Joi.number().min(1).optional().messages({
+    'number.min': 'Maximum participants must be at least 1'
+  }),
+  price: Joi.number().min(0).optional().messages({
+    'number.min': 'Price cannot be negative'
+  }),
+  level: Joi.string().valid('beginner', 'intermediate', 'expert').optional(),
+  categoryId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).allow('', null).optional().messages({
+    'string.pattern.base': 'Category ID must be a valid MongoDB ObjectId'
+  }),
+  requirements: Joi.array().items(Joi.string()).optional(),
+  learningOutcomes: Joi.array().items(Joi.string()).optional(),
+  location: Joi.string().allow('').optional(),
+  equipment: Joi.array().items(Joi.string()).optional(),
+  materials: Joi.array().items(Joi.string()).optional(),
+  attachments: Joi.array().items(
+    Joi.object({
+      filename: Joi.string().required(),
+      path: Joi.string().required(),
+      mimetype: Joi.string().required(),
+      size: Joi.number().required()
+    })
+  ).optional(),
+}).min(1).messages({
+  'object.min': 'At least one field must be provided for update'
 });
 
 // Get all workshops with optional category filter
@@ -76,8 +164,8 @@ export const getAllWorkshops = async (req, res) => {
     const sort = { [sortBy]: sortOrder === 'desc' ? -1 : 1 };
 
     const workshops = await Workshop.find(query)
-      .populate('instructor', 'name email')
-      .populate('participants', 'name email')
+      .populate('instructor', 'firstName lastName')
+      .populate('participants', 'firstName lastName')
       .populate('categoryId', 'name')
       .sort(sort)
       .skip(skip)
@@ -111,7 +199,7 @@ export const getUpcomingWorkshops = async (req, res) => {
       date: { $gte: currentDate },
       status: 'upcoming'
     })
-      .populate('instructor', 'name email')
+      .populate('instructor', 'firstName lastName')
       .populate('categoryId', 'name')
       .sort({ date: 1 });
 
@@ -133,8 +221,8 @@ export const getUpcomingWorkshops = async (req, res) => {
 export const getHostedWorkshops = async (req, res) => {
   try {
     const workshops = await Workshop.find({ instructor: req.user.id })
-      .populate('instructor', 'name email')
-      .populate('participants', 'name email')
+      .populate('instructor', 'firstName lastName')
+      .populate('participants', 'firstName lastName')
       .populate('categoryId', 'name')
       .sort({ date: 1 });
 
@@ -156,8 +244,8 @@ export const getHostedWorkshops = async (req, res) => {
 export const getWorkshop = async (req, res) => {
   try {
     const workshop = await Workshop.findById(req.params.id)
-      .populate('instructor', 'name email')
-      .populate('participants', 'name email')
+      .populate('instructor', 'firstName lastName')
+      .populate('participants', 'firstName lastName')
       .populate('categoryId', 'name');
     
     if (!workshop) {
@@ -186,42 +274,40 @@ export const createWorkshop = async (req, res) => {
     // Validate request body
     const { error, value } = workshopValidationSchema.validate(req.body);
     if (error) {
+      // If there are files uploaded, delete them before returning error
+      if (req.files && req.files.length > 0) {
+        await Promise.all(req.files.map(file => fs.promises.unlink(file.path)));
+      }
       return res.status(400).json({
         success: false,
         error: error.details[0].message
       });
     }
 
-    // Handle file uploads if present
-    let attachments = [];
-    if (req.files && req.files.length > 0) {
-      attachments = req.files.map(file => ({
-        filename: file.originalname,
-        path: file.path,
-        mimetype: file.mimetype,
-        size: file.size
-      }));
-    }
+    // Process attachments
+    const attachments = processAttachments(req.files);
 
     // Create workshop with attachments
     const workshop = await Workshop.create({
       ...value,
-      attachments,
-      instructor: req.user.id // Set the instructor to the authenticated user
+      instructor: req.user._id,
+      attachments
     });
+
+    // Populate the response data
+    const populatedWorkshop = await Workshop.findById(workshop._id)
+      .populate('instructor', 'firstName lastName')
+      .populate('categoryId', 'name');
 
     res.status(201).json({
       success: true,
-      data: workshop
+      data: populatedWorkshop
     });
   } catch (err) {
     console.error('Error creating workshop:', err);
-    if (err.name === 'ValidationError') {
-      const messages = Object.values(err.errors).map(val => val.message);
-      return res.status(400).json({
-        success: false,
-        error: messages
-      });
+    // If there are files uploaded and an error occurs, delete them
+    if (req.files && req.files.length > 0) {
+      await Promise.all(req.files.map(file => fs.promises.unlink(file.path)));
     }
     res.status(500).json({
       success: false,
@@ -233,18 +319,13 @@ export const createWorkshop = async (req, res) => {
 // Update workshop
 export const updateWorkshop = async (req, res) => {
   try {
-    // Validate request body
-    const { error, value } = workshopValidationSchema.validate(req.body);
-    if (error) {
-      return res.status(400).json({
-        success: false,
-        error: error.details[0].message
-      });
-    }
-
     // Find the existing workshop
-    const existingWorkshop = await Workshop.findById(req.params.id);
-    if (!existingWorkshop) {
+    const workshop = await Workshop.findById(req.params.id);
+    if (!workshop) {
+      // Delete uploaded files if workshop not found
+      if (req.files && req.files.length > 0) {
+        await Promise.all(req.files.map(file => fs.promises.unlink(file.path)));
+      }
       return res.status(404).json({
         success: false,
         error: 'Workshop not found'
@@ -252,44 +333,61 @@ export const updateWorkshop = async (req, res) => {
     }
 
     // Check if user is the instructor
-    if (existingWorkshop.instructor.toString() !== req.user.id) {
+    if (workshop.instructor.toString() !== req.user._id.toString()) {
+      if (req.files && req.files.length > 0) {
+        await Promise.all(req.files.map(file => fs.promises.unlink(file.path)));
+      }
       return res.status(403).json({
         success: false,
         error: 'Not authorized to update this workshop'
       });
     }
 
-    // Handle file uploads if present
-    let attachments = [...existingWorkshop.attachments];
-    if (req.files && req.files.length > 0) {
-      const newAttachments = req.files.map(file => ({
-        filename: file.originalname,
-        path: file.path,
-        mimetype: file.mimetype,
-        size: file.size
-      }));
-      attachments = [...attachments, ...newAttachments];
+    // Validate request body using the update schema
+    const { error, value } = workshopUpdateValidationSchema.validate(req.body);
+    if (error) {
+      if (req.files && req.files.length > 0) {
+        await Promise.all(req.files.map(file => fs.promises.unlink(file.path)));
+      }
+      return res.status(400).json({
+        success: false,
+        error: error.details[0].message
+      });
     }
 
-    // Update workshop with new attachments
-    const workshop = await Workshop.findByIdAndUpdate(
-      req.params.id, 
-      { ...value, attachments },
-      { new: true, runValidators: true }
-    );
+    // Process new attachments
+    const newAttachments = processAttachments(req.files);
+
+    // Delete old attachments if new ones are provided
+    if (newAttachments.length > 0) {
+      await deleteAttachments(workshop.attachments);
+    }
+
+    // Update workshop with only the fields that were provided
+    const updateData = {
+      ...Object.fromEntries(
+        Object.entries(value).filter(([_, v]) => v !== undefined)
+      ),
+      attachments: newAttachments.length > 0 ? newAttachments : workshop.attachments
+    };
+
+    // Update workshop
+    const updatedWorkshop = await Workshop.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      { new: true }
+    ).populate('instructor', 'firstName lastName')
+      .populate('categoryId', 'name');
 
     res.status(200).json({
       success: true,
-      data: workshop
+      data: updatedWorkshop
     });
   } catch (err) {
     console.error('Error updating workshop:', err);
-    if (err.name === 'ValidationError') {
-      const messages = Object.values(err.errors).map(val => val.message);
-      return res.status(400).json({
-        success: false,
-        error: messages
-      });
+    // If there are files uploaded and an error occurs, delete them
+    if (req.files && req.files.length > 0) {
+      await Promise.all(req.files.map(file => fs.promises.unlink(file.path)));
     }
     res.status(500).json({
       success: false,
@@ -302,7 +400,6 @@ export const updateWorkshop = async (req, res) => {
 export const deleteWorkshop = async (req, res) => {
   try {
     const workshop = await Workshop.findById(req.params.id);
-
     if (!workshop) {
       return res.status(404).json({
         success: false,
@@ -311,25 +408,18 @@ export const deleteWorkshop = async (req, res) => {
     }
 
     // Check if user is the instructor
-    if (workshop.instructor.toString() !== req.user.id) {
+    if (workshop.instructor.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         success: false,
         error: 'Not authorized to delete this workshop'
       });
     }
 
-    // Delete associated files
-    if (workshop.attachments && workshop.attachments.length > 0) {
-      workshop.attachments.forEach(attachment => {
-        const filePath = attachment.path;
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-        }
-      });
-    }
+    // Delete attachments
+    await deleteAttachments(workshop.attachments);
 
-    // Delete the workshop from database
-    await Workshop.findByIdAndDelete(req.params.id);
+    // Delete workshop
+    await workshop.deleteOne();
 
     res.status(200).json({
       success: true,

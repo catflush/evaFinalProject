@@ -3,32 +3,43 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useEvents } from '../context/EventContext';
 import { TiDownload, TiArrowBack } from 'react-icons/ti';
 import EventCard from '../components/EventCard';
+import { toast } from 'react-toastify';
 
 const EventDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { getEvent, loading, error } = useEvents();
+  const { getEvent, error } = useEvents();
   const [event, setEvent] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const fetchEvent = async () => {
       try {
+        setIsLoading(true);
         const eventData = await getEvent(id);
         setEvent(eventData);
       } catch (error) {
         console.error('Failed to fetch event details:', error);
+        toast.error(error.message || 'Failed to load event details');
         navigate('/events');
+      } finally {
+        setIsLoading(false);
       }
     };
 
-    fetchEvent();
+    if (id) {
+      fetchEvent();
+    } else {
+      toast.error('Invalid event ID');
+      navigate('/events');
+    }
   }, [id, getEvent, navigate]);
 
   const isImageFile = (mimetype) => {
     return mimetype && mimetype.startsWith('image/');
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex justify-center items-center h-[calc(100vh-4rem)]">
         <span className="loading loading-spinner loading-lg"></span>
@@ -41,7 +52,7 @@ const EventDetailPage = () => {
       <div className="p-4">
         <div className="alert alert-error">
           <p>{error || 'Event not found'}</p>
-          <button className="btn btn-sm" onClick={() => navigate('/dashboard/events')}>Back to Events</button>
+          <button className="btn btn-sm" onClick={() => navigate('/events')}>Back to Events</button>
         </div>
       </div>
     );
@@ -51,7 +62,7 @@ const EventDetailPage = () => {
     <div className="p-4 md:p-6 lg:p-8 max-w-4xl mx-auto">
       <button 
         className="btn btn-ghost mb-4 md:mb-6"
-        onClick={() => navigate('/dashboard/events')}
+        onClick={() => navigate('/events')}
       >
         <TiArrowBack className="h-5 w-5 mr-1" />
         Back to Events

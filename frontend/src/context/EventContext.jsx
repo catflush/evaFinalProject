@@ -57,7 +57,7 @@ export const EventProvider = ({ children }) => {
         throw new Error(errorData.error || 'Failed to save event');
       }
 
-      await response.json(); // Consume the response
+      await response.json();
       setSavedEvents(prev => [...prev, eventId]);
       toast.success('Event saved successfully');
     } catch (error) {
@@ -148,46 +148,63 @@ export const EventProvider = ({ children }) => {
         throw new Error(errorData.error || 'Failed to fetch events');
       }
       const data = await response.json();
-      setEvents(ensureArray(data));
+      // Transform events to include full image URLs
+      const eventsWithFullUrls = ensureArray(data.data).map(event => ({
+        ...event,
+        imageUrl: event.imageUrl ? `${API_URL}${event.imageUrl}` : null
+      }));
+      setEvents(eventsWithFullUrls);
     } catch (error) {
       setError(error.message);
       toast.error(error.message);
-      setEvents([]); // Reset to empty array on error
+      setEvents([]);
     } finally {
       setLoading(false);
     }
   }, [ensureArray]);
 
   // Create new event
-  const createEvent = useCallback(async (eventData, files = []) => {
+  const createEvent = useCallback(async (eventData, imageFile) => {
     try {
       setLoading(true);
       setError(null);
       
-      // Create FormData object for multipart/form-data
+      // Validate required fields
+      const requiredFields = ['title', 'description', 'date', 'time', 'type'];
+      const missingFields = requiredFields.filter(field => !eventData[field]);
+      
+      if (missingFields.length > 0) {
+        throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
+      }
+
       const formData = new FormData();
       
       // Add event data fields
       Object.keys(eventData).forEach(key => {
-        formData.append(key, eventData[key]);
+        // Convert date to ISO string if it's a Date object
+        const value = eventData[key] instanceof Date 
+          ? eventData[key].toISOString() 
+          : eventData[key];
+        // Skip image-related fields as they're handled separately
+        if (!['image', 'imageUrl', 'currentImage'].includes(key)) {
+          formData.append(key, value);
+        }
       });
       
       // Set host as the logged-in user's full name
       formData.append('host', `${user?.firstName} ${user?.lastName}`.trim());
       
-      // Add files if any
-      if (files && files.length > 0) {
-        files.forEach(file => {
-          formData.append('attachments', file);
-        });
+      // Add image if present
+      if (imageFile) {
+        formData.append('image', imageFile);
       }
-      
+
       const response = await fetch(`${API_URL}/events`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${user?.token}`
         },
-        body: formData, // FormData automatically sets the correct Content-Type
+        body: formData
       });
 
       if (!response.ok) {
@@ -196,46 +213,83 @@ export const EventProvider = ({ children }) => {
       }
 
       const responseData = await response.json();
-      const newEvent = responseData.data || responseData;
-      setEvents(prev => [...ensureArray(prev), newEvent]);
+      const newEvent = responseData.data;
+      
+      // Ensure the image URL is properly set
+      if (newEvent.imageUrl) {
+        newEvent.imageUrl = `${API_URL}${newEvent.imageUrl}`;
+      }
+      
+      // Update the events list
+      setEvents(prev => [...prev, newEvent]);
       toast.success('Event created successfully');
       return newEvent;
     } catch (error) {
       setError(error.message);
       toast.error(error.message);
-      throw error;
+      return null;
     } finally {
       setLoading(false);
     }
-  }, [ensureArray, user]);
+  }, [user]);
 
-  // Update event
-  const updateEvent = useCallback(async (eventId, eventData, files = []) => {
+  // Get single event
+  const getEvent = useCallback(async (eventId) => {
     try {
       setLoading(true);
       setError(null);
-      
-      // Create FormData object for multipart/form-data
+      const response = await fetch(`${API_URL}/events/${eventId}`);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch event');
+      }
+      const data = await response.json();
+      // Transform event to include full image URL
+      const eventWithFullUrl = {
+        ...data.data,
+        imageUrl: data.data.imageUrl ? `${API_URL}${data.data.imageUrl}` : null
+      };
+      return eventWithFullUrl;
+    } catch (error) {
+      setError(error.message);
+      toast.error(error.message);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Update event
+  const updateEvent = useCallback(async (eventId, eventData, imageFile) => {
+    try {
+      setLoading(true);
+      setError(null);
+
       const formData = new FormData();
       
       // Add event data fields
       Object.keys(eventData).forEach(key => {
-        formData.append(key, eventData[key]);
+        // Convert date to ISO string if it's a Date object
+        const value = eventData[key] instanceof Date 
+          ? eventData[key].toISOString() 
+          : eventData[key];
+        // Skip image-related fields as they're handled separately
+        if (!['image', 'imageUrl', 'currentImage'].includes(key)) {
+          formData.append(key, value);
+        }
       });
       
-      // Add files if any
-      if (files && files.length > 0) {
-        files.forEach(file => {
-          formData.append('attachments', file);
-        });
+      // Add image if present
+      if (imageFile) {
+        formData.append('image', imageFile);
       }
-      
+
       const response = await fetch(`${API_URL}/events/${eventId}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${user?.token}`
         },
-        body: formData, // FormData automatically sets the correct Content-Type
+        body: formData
       });
 
       if (!response.ok) {
@@ -244,8 +298,15 @@ export const EventProvider = ({ children }) => {
       }
 
       const responseData = await response.json();
-      const updatedEvent = responseData.data || responseData;
-      setEvents(prev => ensureArray(prev).map(event => 
+      const updatedEvent = responseData.data;
+      
+      // Ensure the image URL is properly set
+      if (updatedEvent.imageUrl) {
+        updatedEvent.imageUrl = `${API_URL}${updatedEvent.imageUrl}`;
+      }
+      
+      // Update the events list
+      setEvents(prev => prev.map(event => 
         event._id === eventId ? updatedEvent : event
       ));
       toast.success('Event updated successfully');
@@ -253,17 +314,18 @@ export const EventProvider = ({ children }) => {
     } catch (error) {
       setError(error.message);
       toast.error(error.message);
-      throw error;
+      return null;
     } finally {
       setLoading(false);
     }
-  }, [ensureArray, user]);
+  }, [user]);
 
   // Delete event
   const deleteEvent = useCallback(async (eventId) => {
     try {
       setLoading(true);
       setError(null);
+      
       const response = await fetch(`${API_URL}/events/${eventId}`, {
         method: 'DELETE',
         headers: {
@@ -287,59 +349,28 @@ export const EventProvider = ({ children }) => {
     }
   }, [ensureArray, user]);
 
-  // Delete attachment from event
-  const deleteAttachment = useCallback(async (eventId, attachmentId) => {
+  // Get upcoming events
+  const getUpcomingEvents = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`${API_URL}/events/${eventId}/attachments/${attachmentId}`, {
-        method: 'DELETE',
-      });
-
+      const response = await fetch(`${API_URL}/events/upcoming`);
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to delete attachment');
+        throw new Error(errorData.error || 'Failed to fetch upcoming events');
       }
-
-      const responseData = await response.json();
-      const updatedEvent = responseData.data || responseData;
-      setEvents(prev => ensureArray(prev).map(event => 
-        event._id === eventId ? updatedEvent : event
-      ));
-      toast.success('Attachment deleted successfully');
+      const data = await response.json();
+      return ensureArray(data.data);
     } catch (error) {
       setError(error.message);
       toast.error(error.message);
-      throw error;
+      return [];
     } finally {
       setLoading(false);
     }
   }, [ensureArray]);
 
-  // Get single event (aliased as getEventById for consistency)
-  const getEvent = useCallback(async (eventId) => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await fetch(`${API_URL}/events/${eventId}`);
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch event');
-      }
-
-      const responseData = await response.json();
-      return responseData.data || responseData;
-    } catch (error) {
-      setError(error.message);
-      toast.error(error.message);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  // Get hosted events for the current user
+  // Get hosted events
   const getHostedEvents = useCallback(async () => {
     if (!user?._id) {
       return [];
@@ -360,7 +391,7 @@ export const EventProvider = ({ children }) => {
       }
 
       const data = await response.json();
-      return ensureArray(data);
+      return ensureArray(data.data);
     } catch (error) {
       setError(error.message);
       toast.error(error.message);
@@ -368,11 +399,10 @@ export const EventProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  }, [user, ensureArray]);
+  }, [ensureArray, user]);
 
-  // Memoize the context value to prevent unnecessary re-renders
-  const contextValue = useMemo(() => ({
-    events: ensureArray(events),
+  const value = useMemo(() => ({
+    events,
     savedEvents,
     loading,
     error,
@@ -380,14 +410,13 @@ export const EventProvider = ({ children }) => {
     createEvent,
     updateEvent,
     deleteEvent,
-    deleteAttachment,
-    getEvent,
-    getEventById: getEvent, // Alias for consistency
     saveEvent,
     unsaveEvent,
     isEventSaved,
     getSavedEvents,
-    getHostedEvents
+    getUpcomingEvents,
+    getHostedEvents,
+    getEvent
   }), [
     events,
     savedEvents,
@@ -397,18 +426,17 @@ export const EventProvider = ({ children }) => {
     createEvent,
     updateEvent,
     deleteEvent,
-    deleteAttachment,
-    getEvent,
     saveEvent,
     unsaveEvent,
     isEventSaved,
     getSavedEvents,
+    getUpcomingEvents,
     getHostedEvents,
-    ensureArray
+    getEvent
   ]);
 
   return (
-    <EventContext.Provider value={contextValue}>
+    <EventContext.Provider value={value}>
       {children}
     </EventContext.Provider>
   );

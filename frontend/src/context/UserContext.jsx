@@ -1,7 +1,7 @@
 import { createContext, useState, useEffect } from 'react';
 
 // Get API URL from environment variables with fallback
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 // Create the context
 export const UserContext = createContext();
@@ -70,12 +70,12 @@ export const UserProvider = ({ children }) => {
         body: JSON.stringify({ email, password }),
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Login failed');
+        throw new Error(data.message || 'Login failed');
       }
 
-      const data = await response.json();
       // Ensure role is lowercase
       if (data.role) {
         data.role = data.role.toLowerCase();

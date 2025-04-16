@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { FaCalendarAlt, FaMapMarkerAlt, FaUsers, FaTicketAlt, FaClock, FaEdit, FaTrash, FaArrowLeft } from 'react-icons/fa';
+import { FaCalendarAlt, FaMapMarkerAlt, FaUsers, FaTicketAlt, FaClock, FaEdit, FaTrash, FaArrowLeft, FaTimes, FaImage } from 'react-icons/fa';
 import { format, isValid } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useEvents } from '../context/EventContext';
@@ -9,12 +9,13 @@ import { useBookings } from '../context/BookingContext';
 const HostedEventDetails = () => {
   const { eventId } = useParams();
   const navigate = useNavigate();
-  const { getEventById, updateEvent, deleteEvent } = useEvents();
-  const { bookings, getUserBookings } = useBookings();
+  const { getEvent, updateEvent, deleteEvent } = useEvents();
+  const { getUserBookings } = useBookings();
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [eventBookings, setEventBookings] = useState([]);
   const [editForm, setEditForm] = useState({
     title: '',
     description: '',
@@ -23,13 +24,18 @@ const HostedEventDetails = () => {
     location: '',
     capacity: '',
     price: '',
-    category: ''
+    category: '',
+    image: '',
+    currentImage: ''
   });
 
   useEffect(() => {
     const loadEvent = async () => {
       try {
-        const eventData = await getEventById(eventId);
+        const eventData = await getEvent(eventId);
+        if (!eventData) {
+          throw new Error('Event not found');
+        }
         setEvent(eventData);
         setEditForm({
           title: eventData.title,
@@ -39,10 +45,17 @@ const HostedEventDetails = () => {
           location: eventData.location,
           capacity: eventData.capacity,
           price: eventData.price,
-          category: eventData.category
+          category: eventData.category,
+          image: eventData.image,
+          currentImage: eventData.image
         });
+
+        // Fetch bookings for this event
+        const eventBookingsData = await getUserBookings(eventId);
+        setEventBookings(eventBookingsData);
       } catch (error) {
-        toast.error('Failed to load event details');
+        console.error('Error loading event:', error);
+        toast.error(error.message || 'Failed to load event details');
         navigate('/dashboard/hosted-events');
       } finally {
         setLoading(false);
@@ -50,16 +63,25 @@ const HostedEventDetails = () => {
     };
 
     loadEvent();
-  }, [eventId, getEventById, navigate]);
+  }, [eventId, getEvent, getUserBookings, navigate]);
 
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     try {
       setProcessing(true);
-      await updateEvent(eventId, editForm);
+      
+      // Create a copy of the form data without image-related fields
+      const { image, ...eventData } = editForm;
+      
+      // Add the image if a new one was selected
+      if (image) {
+        eventData.image = image;
+      }
+
+      await updateEvent(eventId, eventData);
       toast.success('Event updated successfully');
       setEditing(false);
-      const updatedEvent = await getEventById(eventId);
+      const updatedEvent = await getEvent(eventId);
       setEvent(updatedEvent);
     } catch (error) {
       toast.error(error.message || 'Failed to update event');
@@ -93,8 +115,32 @@ const HostedEventDetails = () => {
     }));
   };
 
-  // Filter bookings for this event
-  const eventBookings = bookings.filter(booking => booking.event?._id === eventId);
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        toast.error('Please select an image file');
+        return;
+      }
+
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('Image size should be less than 5MB');
+        return;
+      }
+
+      setEditForm(prev => ({
+        ...prev,
+        image: file
+      }));
+    }
+  };
+
+  // Calculate total participants
+  const totalParticipants = eventBookings.reduce((total, booking) => 
+    total + (booking.numberOfParticipants || 0), 0
+  );
 
   if (loading) {
     return (
@@ -192,7 +238,7 @@ const HostedEventDetails = () => {
                 <div>
                   <h3 className="font-medium text-gray-900">Capacity</h3>
                   <p className="text-gray-600">
-                    {eventBookings.reduce((total, booking) => total + (booking.numberOfParticipants || 0), 0)} / {event.capacity} participants
+                    {totalParticipants} / {event.capacity} participants
                   </p>
                   <p className="text-sm text-gray-500">
                     {eventBookings.length} bookings
@@ -207,6 +253,20 @@ const HostedEventDetails = () => {
                   <p className="text-gray-600">${event.price}</p>
                 </div>
               </div>
+
+              {event.imageUrl ? (
+                <div className="mt-4">
+                  <img 
+                    src={event.imageUrl} 
+                    alt={event.title} 
+                    className="w-full h-48 object-cover rounded-lg"
+                  />
+                </div>
+              ) : (
+                <div className="mt-4 bg-gray-100 rounded-lg h-48 flex items-center justify-center">
+                  <FaImage className="w-12 h-12 text-gray-400" />
+                </div>
+              )}
             </div>
 
             <div>
@@ -255,6 +315,13 @@ const HostedEventDetails = () => {
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan="2" className="font-bold">Total Participants</td>
+                    <td className="font-bold">{totalParticipants}</td>
+                    <td colSpan="2"></td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           ) : (
@@ -372,6 +439,45 @@ const HostedEventDetails = () => {
                       required
                     />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Event Image</label>
+                  <div className="mt-1 flex items-center">
+                    <label className="flex flex-col items-center px-4 py-2 bg-white rounded-lg shadow-sm tracking-wide border border-gray-300 cursor-pointer hover:bg-gray-50">
+                      <FaImage className="w-6 h-6 text-gray-600" />
+                      <span className="mt-2 text-sm text-gray-600">
+                        {editForm.image ? editForm.image.name : 'Choose image'}
+                      </span>
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept="image/*"
+                        onChange={handleImageChange}
+                      />
+                    </label>
+                  </div>
+                  {editForm.image ? (
+                    <div className="mt-2">
+                      <img
+                        src={URL.createObjectURL(editForm.image)}
+                        alt="Preview"
+                        className="h-32 w-full object-cover rounded-lg"
+                      />
+                    </div>
+                  ) : event.imageUrl ? (
+                    <div className="mt-2">
+                      <img
+                        src={event.imageUrl}
+                        alt="Current"
+                        className="h-32 w-full object-cover rounded-lg"
+                      />
+                    </div>
+                  ) : (
+                    <div className="mt-2 bg-gray-100 rounded-lg h-32 flex items-center justify-center">
+                      <FaImage className="w-8 h-8 text-gray-400" />
+                    </div>
+                  )}
                 </div>
 
                 <div>

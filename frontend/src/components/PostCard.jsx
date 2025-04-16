@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { FaThumbsUp, FaComment, FaTrash, FaImage } from 'react-icons/fa';
 import { useUser } from '../context/useUser';
@@ -12,30 +12,18 @@ const PostCard = ({ post, onDelete }) => {
   const { likePost, addComment } = usePosts();
   const [commentInput, setCommentInput] = useState('');
   const [showComments, setShowComments] = useState(false);
-  const [imageUrl, setImageUrl] = useState(null);
   const [imageLoading, setImageLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
 
-  const getImageUrl = (imagePath) => {
-    if (!imagePath) return null;
-    if (imagePath.startsWith('http')) return imagePath;
+  // Memoize the image URL to prevent unnecessary recalculations
+  const imageUrl = useMemo(() => {
+    if (!post?.image) return null;
+    if (post.image.startsWith('http')) return post.image;
     
     // Remove any leading slashes and 'uploads/' prefix to avoid duplicates
-    const cleanPath = imagePath.replace(/^\/+/, '').replace(/^uploads\//, '');
-    const url = `${API_URL.replace(/\/api$/, '')}/uploads/${cleanPath}`;
-    console.log('Constructed image URL:', url); // Debug log
-    return url;
-  };
-
-  useEffect(() => {
-    if (post?.image) {
-      const url = getImageUrl(post.image);
-      console.log('Setting image URL:', url); // Debug log
-      setImageUrl(url);
-      setImageLoading(true);
-      setImageError(false);
-    }
-  }, [post]);
+    const cleanPath = post.image.replace(/^\/+/, '').replace(/^uploads\//, '');
+    return `${API_URL.replace(/\/api$/, '')}/uploads/${cleanPath}`;
+  }, [post?.image]);
 
   const handleLike = async () => {
     try {
@@ -64,8 +52,7 @@ const PostCard = ({ post, onDelete }) => {
     console.error('Error loading image:', {
       error: e,
       imageUrl,
-      postImage: post.image,
-      constructedUrl: getImageUrl(post.image)
+      postImage: post.image
     });
     setImageError(true);
     setImageLoading(false);
@@ -79,7 +66,7 @@ const PostCard = ({ post, onDelete }) => {
   return (
     <div className="bg-white rounded-lg shadow-md overflow-hidden">
       {post.image && (
-        <div className="relative h-48 w-full">
+        <div className="relative aspect-video w-full">
           {imageLoading && (
             <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
@@ -90,6 +77,7 @@ const PostCard = ({ post, onDelete }) => {
               src={imageUrl}
               alt={post.content}
               className="w-full h-full object-cover"
+              loading="lazy"
               onLoad={() => setImageLoading(false)}
               onError={handleImageError}
             />

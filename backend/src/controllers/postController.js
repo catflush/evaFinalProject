@@ -23,66 +23,6 @@ if (!fs.existsSync(POSTS_UPLOADS_DIR)) {
   console.log('Created posts uploads directory:', POSTS_UPLOADS_DIR);
 }
 
-// Helper function to log file paths
-const logFileInfo = (file, operation) => {
-  console.log(`\n=== ${operation} File Info ===`);
-  console.log('Original filename:', file.originalname);
-  console.log('Generated filename:', file.filename);
-  console.log('Mimetype:', file.mimetype);
-  console.log('Size:', file.size, 'bytes');
-  console.log('Path:', file.path);
-  console.log('Destination:', file.destination);
-  console.log('=====================\n');
-};
-
-// Helper function to log directory info
-const logDirectoryInfo = (dirPath) => {
-  console.log(`\n=== Directory Info ===`);
-  console.log('Directory path:', dirPath);
-  console.log('Directory exists:', fs.existsSync(dirPath));
-  if (fs.existsSync(dirPath)) {
-    console.log('Directory contents:', fs.readdirSync(dirPath));
-  }
-  console.log('=====================\n');
-};
-
-// Helper function to get correct file path
-const getFilePath = (relativePath) => {
-  if (!relativePath) return null;
-  // Remove any leading slashes and 'uploads/' prefix to avoid duplicates
-  const cleanPath = relativePath.replace(/^\/+/, '').replace(/^uploads\//, '');
-  // Return the full path
-  return path.join(BASE_UPLOADS_DIR, cleanPath);
-};
-
-// Helper function to get relative image path
-const getRelativeImagePath = (filename) => {
-  if (!filename) return null;
-  // Remove any leading slashes and 'uploads/' prefix to avoid duplicates
-  const cleanFilename = filename.replace(/^\/+/, '').replace(/^uploads\//, '');
-  // Return the path relative to the uploads directory
-  return `posts/${cleanFilename}`;
-};
-
-// Helper function to log image path
-const logImagePath = (postId, imagePath) => {
-  if (!imagePath) return;
-  
-  console.log(`\n=== Post ${postId} Image ===`);
-  console.log('Original path:', imagePath);
-  const fullPath = getFilePath(imagePath);
-  console.log('Full path:', fullPath);
-  console.log('File exists:', fs.existsSync(fullPath));
-  if (fs.existsSync(fullPath)) {
-    const stats = fs.statSync(fullPath);
-    console.log('File size:', stats.size, 'bytes');
-    console.log('Last modified:', stats.mtime);
-  } else {
-    console.log('Directory contents:', fs.readdirSync(path.dirname(fullPath)));
-  }
-  console.log('=====================\n');
-};
-
 /**
  * @desc    Get all posts
  * @route   GET /api/posts
@@ -94,13 +34,6 @@ export const getPosts = async (req, res) => {
       .populate('author', 'firstName lastName')
       .populate('comments.author', 'firstName lastName')
       .sort({ createdAt: -1 });
-    
-    // Log image paths for each post
-    posts.forEach(post => {
-      if (post.image) {
-        logImagePath(post._id, post.image);
-      }
-    });
     
     res.json(posts);
   } catch (error) {
@@ -116,10 +49,6 @@ export const getPosts = async (req, res) => {
  */
 export const createPost = async (req, res) => {
   try {
-    console.log('Request body:', req.body);
-    console.log('Request file:', req.file);
-    console.log('Request user:', req.user);
-
     if (!req.user) {
       return res.status(401).json({ message: 'Not authenticated' });
     }
@@ -128,23 +57,13 @@ export const createPost = async (req, res) => {
       return res.status(400).json({ message: 'Content is required' });
     }
 
-    // Log directory info before processing files
-    logDirectoryInfo(POSTS_UPLOADS_DIR);
-    
-    // Log uploaded file if exists
-    if (req.file) {
-      logFileInfo(req.file, 'Upload');
-    }
-
     const postData = {
       content: req.body.content,
       author: req.user._id,
     };
 
     if (req.file) {
-      // Store the relative path to the uploads directory
-      postData.image = getRelativeImagePath(req.file.filename);
-      console.log('Storing image path:', postData.image);
+      postData.image = `posts/${req.file.filename}`;
     }
 
     const post = new Post(postData);
@@ -152,9 +71,6 @@ export const createPost = async (req, res) => {
 
     const populatedPost = await Post.findById(post._id)
       .populate('author', 'firstName lastName');
-
-    // Log the created post with image path
-    logImagePath(post._id, post.image);
 
     res.status(201).json(populatedPost);
   } catch (error) {
@@ -243,19 +159,8 @@ export const updatePost = async (req, res) => {
       return res.status(404).json({ message: 'Post not found' });
     }
 
-    // Check if the user is the author of the post
     if (post.author.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to update this post' });
-    }
-
-    // Log existing image
-    if (post.image) {
-      logImagePath(post._id, post.image);
-    }
-    
-    // Log new file if uploaded
-    if (req.file) {
-      logFileInfo(req.file, 'Update');
     }
 
     const { content } = req.body;
@@ -264,22 +169,18 @@ export const updatePost = async (req, res) => {
     }
 
     // Handle image update if a new image is uploaded
-    let image = post.image;
     if (req.file) {
       // Delete old image if it exists
       if (post.image) {
-        const oldImagePath = getFilePath(post.image);
+        const oldImagePath = path.join(BASE_UPLOADS_DIR, post.image);
         if (fs.existsSync(oldImagePath)) {
           await fs.promises.unlink(oldImagePath);
-          console.log('Old image deleted successfully');
         }
       }
-      image = getRelativeImagePath(req.file.filename);
+      post.image = `posts/${req.file.filename}`;
     }
 
-    // Update post
     post.content = content;
-    post.image = image;
     await post.save();
 
     const updatedPost = await Post.findById(post._id)
@@ -293,16 +194,10 @@ export const updatePost = async (req, res) => {
         }
       });
 
-    // Log updated post with image path
-    logImagePath(post._id, post.image);
-
     res.json(updatedPost);
   } catch (error) {
     console.error('Error updating post:', error);
-    res.status(500).json({ 
-      message: 'Server error',
-      error: error.message 
-    });
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
@@ -322,22 +217,14 @@ export const deletePost = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to delete this post' });
     }
 
-    // Log and delete image
+    // Delete image if exists
     if (post.image) {
-      const filePath = getFilePath(post.image);
-      console.log('\n=== Deleting Post Image ===');
-      console.log('Image path:', post.image);
-      console.log('Full path:', filePath);
-      
+      const filePath = path.join(BASE_UPLOADS_DIR, post.image);
       if (fs.existsSync(filePath)) {
         await fs.promises.unlink(filePath);
-        console.log('Image deleted successfully');
-      } else {
-        console.log('Image file not found');
       }
     }
 
-    // Use deleteOne() instead of remove()
     await Post.deleteOne({ _id: req.params.id });
     
     res.json({ message: 'Post deleted successfully' });

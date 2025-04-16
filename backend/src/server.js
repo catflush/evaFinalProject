@@ -25,6 +25,41 @@ const __dirname = path.dirname(__filename);
 // Load environment variables
 dotenv.config();
 
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(__dirname, '../uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  console.log('Created uploads directory:', uploadsDir);
+}
+
+// Create posts directory if it doesn't exist
+const postsDir = path.join(uploadsDir, 'posts');
+if (!fs.existsSync(postsDir)) {
+  fs.mkdirSync(postsDir, { recursive: true });
+  console.log('Created posts directory:', postsDir);
+}
+
+// Create events directory if it doesn't exist
+const eventsUploadDir = path.join(uploadsDir, 'events');
+if (!fs.existsSync(eventsUploadDir)) {
+  fs.mkdirSync(eventsUploadDir, { recursive: true });
+  console.log('Created events directory:', eventsUploadDir);
+}
+
+// Create workshop directory if it doesn't exist
+const workshopsUploadDir = path.join(uploadsDir, 'workshops');
+if (!fs.existsSync(workshopsUploadDir)) {
+  fs.mkdirSync(workshopsUploadDir, { recursive: true });
+  console.log('Created workshops directory:', workshopsUploadDir);
+}
+
+// Create services directory if it doesn't exist
+const servicesUploadDir = path.join(uploadsDir, 'services');
+if (!fs.existsSync(servicesUploadDir)) {
+  fs.mkdirSync(servicesUploadDir, { recursive: true });
+  console.log('Created services directory:', servicesUploadDir);
+}
+
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -47,27 +82,19 @@ app.use(cors({
   credentials: true
 }));
 
-// Create uploads directory if it doesn't exist
-const uploadsDir = path.join(__dirname, '../uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-  console.log('Created uploads directory:', uploadsDir);
-}
-
-// Create posts directory if it doesn't exist
-const postsDir = path.join(uploadsDir, 'posts');
-if (!fs.existsSync(postsDir)) {
-  fs.mkdirSync(postsDir, { recursive: true });
-  console.log('Created posts directory:', postsDir);
-}
-
 // Serve static files from the uploads directory
 app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
   setHeaders: (res, path) => {
     // Set CORS headers for static files
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-  }
+    // Cache control headers
+    res.setHeader('Cache-Control', 'public, max-age=31536000'); // 1 year
+    res.setHeader('Expires', new Date(Date.now() + 31536000000).toUTCString());
+  },
+  maxAge: '1y',
+  etag: true,
+  lastModified: true
 }));
 
 // Middleware
@@ -99,4 +126,7 @@ app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
   console.log('Uploads directory:', uploadsDir);
   console.log('Posts directory:', postsDir);
+  console.log('Events directory:', eventsUploadDir);
+  console.log('Workshops directory:', workshopsUploadDir);
+  console.log('Services directory:', servicesUploadDir);
 });

@@ -2,6 +2,29 @@ import Event from '../models/Event.js';
 import Joi from 'joi';
 import fs from 'fs';
 import mongoose from 'mongoose';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Get the directory name
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Define upload directories
+const uploadsDir = path.join(__dirname, '../../uploads');
+const eventsUploadDir = path.join(uploadsDir, 'events');
+
+// Ensure upload directories exist
+const ensureUploadsDirectory = () => {
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+    console.log('Created uploads directory:', uploadsDir);
+  }
+  if (!fs.existsSync(eventsUploadDir)) {
+    fs.mkdirSync(eventsUploadDir, { recursive: true });
+    console.log('Created events directory:', eventsUploadDir);
+  }
+  return eventsUploadDir;
+};
 
 // Validation schemas
 const eventValidationSchema = Joi.object({
@@ -15,8 +38,35 @@ const eventValidationSchema = Joi.object({
   price: Joi.number().min(0).default(0),
   categoryId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).allow('', null).messages({
     'string.pattern.base': 'Category ID must be a valid MongoDB ObjectId'
-  })
+  }),
+  image: Joi.any().optional() // Allow image field but don't validate it
 });
+
+// Helper function to generate image URL
+const generateImageUrl = (filePath) => {
+  if (!filePath) return null;
+  try {
+    // Get the relative path from the uploads directory
+    const relativePath = path.relative(uploadsDir, filePath);
+    // Convert backslashes to forward slashes for URLs
+    const urlPath = relativePath.replace(/\\/g, '/');
+    console.log('Generated URL path:', urlPath);
+    // Return the full URL path
+    return `/uploads/${urlPath}`;
+  } catch (error) {
+    console.error('Error generating image URL:', error);
+    return null;
+  }
+};
+
+// Transform event data to include image URL
+const transformEventData = (event) => {
+  const eventData = event.toObject ? event.toObject() : event;
+  return {
+    ...eventData,
+    imageUrl: eventData.image ? generateImageUrl(eventData.image) : null
+  };
+};
 
 // Get all events with optional category filter
 export const getEvents = async (req, res) => {
@@ -26,7 +76,6 @@ export const getEvents = async (req, res) => {
     // Build query
     const query = {};
     if (categoryId) {
-      // Check if categoryId is a valid ObjectId
       if (mongoose.Types.ObjectId.isValid(categoryId)) {
         query.categoryId = categoryId;
       } else {
@@ -37,13 +86,13 @@ export const getEvents = async (req, res) => {
       }
     }
 
-    const events = await Event.find(query)
-      .sort({ date: 1 });
+    const events = await Event.find(query).sort({ date: 1 });
+    const transformedEvents = events.map(transformEventData);
 
     res.status(200).json({
       success: true,
       count: events.length,
-      data: events
+      data: transformedEvents
     });
   } catch (err) {
     console.error('Error fetching events:', err);
@@ -89,9 +138,11 @@ export const getEvent = async (req, res) => {
       });
     }
 
+    const transformedEvent = transformEventData(event);
+
     res.status(200).json({
       success: true,
-      data: event
+      data: transformedEvent
     });
   } catch (err) {
     console.error('Error fetching event:', err);
@@ -105,44 +156,57 @@ export const getEvent = async (req, res) => {
 // Create new event
 export const createEvent = async (req, res) => {
   try {
+    // Ensure uploads directory exists
+    const eventsDir = ensureUploadsDirectory();
+    console.log('Using events directory:', eventsDir);
+
+    // Extract the body data excluding the image
+    const { image, ...bodyData } = req.body;
+    console.log('Request body:', bodyData);
+    console.log('File upload:', req.file ? {
+      originalname: req.file.originalname,
+      path: req.file.path,
+      mimetype: req.file.mimetype
+    } : 'No file uploaded');
+
+    // Set host to the logged-in user's full name
+    const host = `${req.user.firstName} ${req.user.lastName}`.trim();
+    bodyData.host = host;
+
     // Validate request body
-    const { error, value } = eventValidationSchema.validate(req.body);
+    const { error, value } = eventValidationSchema.validate(bodyData);
     if (error) {
+      console.log('Validation error:', error.details[0].message);
+      // If there's a file uploaded, delete it before returning error
+      if (req.file) {
+        console.log('Deleting uploaded file due to validation error:', req.file.path);
+        fs.unlinkSync(req.file.path);
+      }
       return res.status(400).json({
         success: false,
         error: error.details[0].message
       });
     }
 
-    // Handle file uploads if present
-    let attachments = [];
-    if (req.files && req.files.length > 0) {
-      attachments = req.files.map(file => ({
-        filename: file.originalname,
-        path: file.path,
-        mimetype: file.mimetype,
-        size: file.size
-      }));
+    // Handle image upload if present
+    let imagePath = null;
+    if (req.file) {
+      imagePath = req.file.path;
+      bodyData.image = imagePath;
     }
 
-    // Create event with attachments
-    const event = await Event.create({
-      ...value,
-      attachments
-    });
+    const event = await Event.create(bodyData);
+    const transformedEvent = transformEventData(event);
 
     res.status(201).json({
       success: true,
-      data: event
+      data: transformedEvent
     });
   } catch (err) {
     console.error('Error creating event:', err);
-    if (err.name === 'ValidationError') {
-      const messages = Object.values(err.errors).map(val => val.message);
-      return res.status(400).json({
-        success: false,
-        error: messages
-      });
+    // If there's a file uploaded and an error occurs, delete it
+    if (req.file) {
+      fs.unlinkSync(req.file.path);
     }
     res.status(500).json({
       success: false,
@@ -154,65 +218,48 @@ export const createEvent = async (req, res) => {
 // Update event
 export const updateEvent = async (req, res) => {
   try {
-    // Validate request body
-    const { error, value } = eventValidationSchema.validate(req.body);
-    if (error) {
-      return res.status(400).json({
-        success: false,
-        error: error.details[0].message
-      });
-    }
-
-    // Find the existing event
-    const existingEvent = await Event.findById(req.params.id);
-    if (!existingEvent) {
+    const event = await Event.findById(req.params.id);
+    
+    if (!event) {
       return res.status(404).json({
         success: false,
         error: 'Event not found'
       });
     }
 
-    // Handle file uploads if present
-    let updateData = { ...value };
-    if (req.files && req.files.length > 0) {
-      // Delete old attachments if they exist
-      if (existingEvent.attachments && existingEvent.attachments.length > 0) {
-        existingEvent.attachments.forEach(attachment => {
-          const filePath = attachment.path;
-          if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-          }
-        });
-      }
+    // Extract the body data excluding the image
+    const { image, ...bodyData } = req.body;
 
-      // Add new attachments
-      updateData.attachments = req.files.map(file => ({
-        filename: file.originalname,
-        path: file.path,
-        mimetype: file.mimetype,
-        size: file.size
-      }));
+    // Handle image upload if present
+    if (req.file) {
+      // Delete old image if it exists
+      if (event.image) {
+        try {
+          fs.unlinkSync(event.image);
+        } catch (err) {
+          console.error('Error deleting old image:', err);
+        }
+      }
+      bodyData.image = req.file.path;
     }
 
-    // Update event
-    const event = await Event.findByIdAndUpdate(
-      req.params.id, 
-      updateData,
+    const updatedEvent = await Event.findByIdAndUpdate(
+      req.params.id,
+      bodyData,
       { new: true, runValidators: true }
     );
 
+    const transformedEvent = transformEventData(updatedEvent);
+
     res.status(200).json({
       success: true,
-      data: event
+      data: transformedEvent
     });
   } catch (err) {
     console.error('Error updating event:', err);
-    if (err.name === 'ValidationError') {
-      const messages = Object.values(err.errors).map(val => val.message);
-      return res.status(400).json({
-        success: false,
-        error: messages
-      });
+    // If there's a file uploaded and an error occurs, delete it
+    if (req.file) {
+      fs.unlinkSync(req.file.path);
     }
     res.status(500).json({
       success: false,
@@ -233,14 +280,9 @@ export const deleteEvent = async (req, res) => {
       });
     }
 
-    // Delete associated files
-    if (event.attachments && event.attachments.length > 0) {
-      event.attachments.forEach(attachment => {
-        const filePath = attachment.path;
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-        }
-      });
+    // Delete associated image if it exists
+    if (event.image && fs.existsSync(event.image)) {
+      fs.unlinkSync(event.image);
     }
 
     // Delete the event from database

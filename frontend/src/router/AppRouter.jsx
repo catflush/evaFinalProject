@@ -33,6 +33,7 @@ import { ServiceProvider } from "../context/ServiceContext";
 import { CategoryProvider } from "../context/CategoryContext";
 import { AnalyticsProvider } from "../context/AnalyticsContext";
 import { PostProvider } from "../context/PostContext";
+import { WorkshopProvider } from "../context/WorkshopContext";
 import HostedEventDetails from '../pages/HostedEventDetails';
 
 function AppRouter() {
@@ -78,7 +79,9 @@ function AppRouter() {
             <CategoryProvider>
               <AnalyticsProvider>
                 <PostProvider>
-                  <RouterProvider router={router} />
+                  <WorkshopProvider>
+                    <RouterProvider router={router} />
+                  </WorkshopProvider>
                 </PostProvider>
               </AnalyticsProvider>
             </CategoryProvider>
