@@ -7,8 +7,10 @@
     "dev:frontend": "cd frontend && npm run dev",
     "dev:backend": "cd backend && npm run dev",
     "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
-    "build": "cd frontend && npm run build",
-    "start:frontend": "cd frontend && npm run preview",
+    "build:frontend": "cd frontend && npm run build",
+    "build:backend": "cd backend && npm run build",
+    "build": "npm run build:frontend && npm run build:backend",
+    "start:frontend": "cd frontend && npm run start",
     "start:backend": "cd backend && npm start",
     "start": "concurrently \"npm run start:frontend\" \"npm run start:backend\"",
     "test": "cd backend && npm test"
@@ -18,5 +20,8 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "engines": {
+    "node": ">=18.0.0"
+  }
 } 
