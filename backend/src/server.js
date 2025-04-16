@@ -66,7 +66,8 @@ const port = process.env.PORT || 5000;
 // CORS configuration
 const allowedOrigins = [
   'http://localhost:5173',
-  'http://127.0.0.1:5173'
+  'http://127.0.0.1:5173',
+  'https://eva-project-frontend.onrender.com'  // Add your frontend URL here
 ];
 
 app.use(cors({

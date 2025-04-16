@@ -1,14 +1,14 @@
 # Dependencies
-node_modules
-.pnp
+node_modules/
+.pnp/
 .pnp.js
 
 # Testing
-coverage
+coverage/
 
 # Production
-build
-dist
+build/
+dist/
 
 # Misc
 .DS_Store
@@ -24,8 +24,8 @@ yarn-debug.log*
 yarn-error.log*
 
 # Editor directories and files
-.idea
-.vscode
+.idea/
+.vscode/
 *.suo
 *.ntvs*
 *.njsproj
@@ -33,5 +33,5 @@ yarn-error.log*
 *.sw?
 
 # Uploads
-uploads/*
-!uploads/.gitkeep
+uploads/
+*.log

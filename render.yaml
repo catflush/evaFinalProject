@@ -16,6 +16,8 @@ services:
         generateValue: true
       - key: PORT
         value: 5000
+    healthCheckPath: /
+    autoDeploy: true
 
   # Frontend service
   - type: web
@@ -30,6 +32,8 @@ services:
         value: https://eva-project-backend.onrender.com
       - key: PORT
         value: 3000
+    healthCheckPath: /
+    autoDeploy: true
 
 databases:
   - name: eva-project-db
