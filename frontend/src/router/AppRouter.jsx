@@ -35,6 +35,10 @@ import { AnalyticsProvider } from "../context/AnalyticsContext";
 import { PostProvider } from "../context/PostContext";
 import { WorkshopProvider } from "../context/WorkshopContext";
 import HostedEventDetails from '../pages/HostedEventDetails';
+import WorkshopsPage from "../pages/WorkshopsPage";
+import WorkshopCreatePage from "../pages/WorkshopCreatePage";
+import WorkshopDetailPage from "../pages/WorkshopDetailPage";
+import WorkshopEditPage from "../pages/WorkshopEditPage";
 
 function AppRouter() {
   const router = createBrowserRouter(
@@ -48,6 +52,12 @@ function AppRouter() {
         <Route path="login" element={<LoginPage />} />
         <Route path="register" element={<RegisterPage />} />
         <Route path="booking/:id" element={<BookingPage />} />
+        
+        {/* Workshop Routes */}
+        <Route path="workshops" element={<WorkshopsPage />} />
+        <Route path="workshops/create" element={<WorkshopCreatePage />} />
+        <Route path="workshops/:workshopId" element={<WorkshopDetailPage />} />
+        <Route path="workshops/:workshopId/edit" element={<WorkshopEditPage />} />
         
         {/* Dashboard Routes */}
         <Route path="dashboard" element={<DashboardPage />}>
@@ -66,6 +76,12 @@ function AppRouter() {
           <Route path="admin" element={<AdminDashboardPage />} />
           <Route path="admin/bookings" element={<AdminBookingsPage />} />
           <Route path="admin/services" element={<AdminServicesPage />} />
+          
+          {/* Workshop Routes in Dashboard */}
+          <Route path="workshops" element={<WorkshopsPage />} />
+          <Route path="workshops/create" element={<WorkshopCreatePage />} />
+          <Route path="workshops/:workshopId" element={<WorkshopDetailPage />} />
+          <Route path="workshops/:workshopId/edit" element={<WorkshopEditPage />} />
         </Route>
       </Route>
     )

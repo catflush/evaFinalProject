@@ -103,47 +103,34 @@ const storage = multer.diskStorage({
 // File filter to accept only certain file types
 const fileFilter = (req, file, cb) => {
   try {
-    // Log file details for filtering
+    // Log file details for debugging
     console.log('File filter details:', {
       originalname: file.originalname,
       mimetype: file.mimetype,
       size: file.size
     });
 
-    // Accept images, PDFs, and common document formats
-    const allowedMimeTypes = [
-      'image/jpeg', 
-      'image/png', 
-      'image/gif', 
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/vnd.ms-powerpoint',
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-    ];
-    
-    if (allowedMimeTypes.includes(file.mimetype)) {
-      console.log('File type accepted:', file.mimetype);
-      cb(null, true);
-    } else {
-      console.log('File type rejected:', file.mimetype);
-      cb(new Error('Invalid file type. Only images, PDFs, and common document formats are allowed.'), false);
+    // Accept images only
+    if (!file.mimetype.startsWith('image/')) {
+      console.log('Rejected file type:', file.mimetype);
+      cb(new Error('Only image files are allowed!'), false);
+      return;
     }
+
+    console.log('Accepted file type:', file.mimetype);
+    cb(null, true);
   } catch (error) {
     console.error('Error in file filter:', error);
     cb(error);
   }
 };
 
-// Create multer instance
+// Configure multer
 const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB max file size
-    files: 5 // Maximum 5 files per request
+    fileSize: 5 * 1024 * 1024, // 5MB limit
   }
 });
 

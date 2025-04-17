@@ -20,6 +20,19 @@ export const WorkshopProvider = ({ children }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Helper function to process workshop data and add attachment URLs
+  const processWorkshopData = (workshop) => {
+    if (!workshop) return null;
+    
+    return {
+      ...workshop,
+      attachments: workshop.attachments?.map(attachment => ({
+        ...attachment,
+        url: `${API_URL}/uploads/${attachment.path}`
+      })) || []
+    };
+  };
+
   // Get all workshops with optional filters
   const getWorkshops = useCallback(async (filters = {}) => {
     try {
@@ -41,8 +54,9 @@ export const WorkshopProvider = ({ children }) => {
         throw new Error(errorData.error || 'Failed to fetch workshops');
       }
       const data = await response.json();
-      setWorkshops(data.data || []);
-      return data;
+      const processedWorkshops = (data.data || []).map(processWorkshopData);
+      setWorkshops(processedWorkshops);
+      return { ...data, data: processedWorkshops };
     } catch (error) {
       console.error('Error fetching workshops:', error);
       setError(error.message);
@@ -64,7 +78,9 @@ export const WorkshopProvider = ({ children }) => {
         throw new Error(errorData.error || 'Failed to fetch upcoming workshops');
       }
       const data = await response.json();
-      return data.data || [];
+      const processedWorkshops = (data.data || []).map(processWorkshopData);
+      setWorkshops(processedWorkshops);
+      return processedWorkshops;
     } catch (error) {
       console.error('Error fetching upcoming workshops:', error);
       setError(error.message);
@@ -90,7 +106,8 @@ export const WorkshopProvider = ({ children }) => {
         throw new Error(errorData.error || 'Failed to fetch hosted workshops');
       }
       const data = await response.json();
-      return data.data || [];
+      const processedWorkshops = (data.data || []).map(processWorkshopData);
+      return processedWorkshops;
     } catch (error) {
       console.error('Error fetching hosted workshops:', error);
       setError(error.message);
@@ -112,7 +129,7 @@ export const WorkshopProvider = ({ children }) => {
         throw new Error(errorData.error || 'Failed to fetch workshop');
       }
       const data = await response.json();
-      return data.data;
+      return processWorkshopData(data.data);
     } catch (error) {
       console.error('Error fetching workshop:', error);
       setError(error.message);
@@ -146,8 +163,8 @@ export const WorkshopProvider = ({ children }) => {
         }
       });
 
-      // Add attachments
-      attachments.forEach(file => {
+      // Add attachments if provided
+      attachments.forEach((file) => {
         formData.append('attachments', file);
       });
 
@@ -165,9 +182,10 @@ export const WorkshopProvider = ({ children }) => {
       }
 
       const data = await response.json();
-      setWorkshops(prev => [...prev, data.data]);
+      const processedWorkshop = processWorkshopData(data.data);
+      setWorkshops(prev => [...prev, processedWorkshop]);
       toast.success('Workshop created successfully');
-      return data.data;
+      return processedWorkshop;
     } catch (error) {
       console.error('Error creating workshop:', error);
       setError(error.message);
@@ -201,8 +219,8 @@ export const WorkshopProvider = ({ children }) => {
         }
       });
 
-      // Add attachments
-      attachments.forEach(file => {
+      // Add attachments if provided
+      attachments.forEach((file) => {
         formData.append('attachments', file);
       });
 
@@ -220,11 +238,12 @@ export const WorkshopProvider = ({ children }) => {
       }
 
       const data = await response.json();
-      setWorkshops(prev => prev.map(workshop => 
-        workshop._id === workshopId ? data.data : workshop
+      const processedWorkshop = processWorkshopData(data.data);
+      setWorkshops(prev => prev.map(w => 
+        w._id === workshopId ? processedWorkshop : w
       ));
       toast.success('Workshop updated successfully');
-      return data.data;
+      return processedWorkshop;
     } catch (error) {
       console.error('Error updating workshop:', error);
       setError(error.message);
@@ -240,6 +259,7 @@ export const WorkshopProvider = ({ children }) => {
     try {
       setLoading(true);
       setError(null);
+
       const response = await fetch(`${API_URL}/workshops/${workshopId}`, {
         method: 'DELETE',
         headers: {
@@ -252,10 +272,50 @@ export const WorkshopProvider = ({ children }) => {
         throw new Error(errorData.error || 'Failed to delete workshop');
       }
 
-      setWorkshops(prev => prev.filter(workshop => workshop._id !== workshopId));
+      setWorkshops(prev => prev.filter(w => w._id !== workshopId));
       toast.success('Workshop deleted successfully');
     } catch (error) {
       console.error('Error deleting workshop:', error);
+      setError(error.message);
+      toast.error(error.message);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.token]);
+
+  // Delete an attachment
+  const deleteAttachment = useCallback(async (workshopId, attachmentId) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch(`${API_URL}/workshops/${workshopId}/attachments/${attachmentId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${user?.token}`
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete attachment');
+      }
+
+      // Update the workshop in the state
+      setWorkshops(prev => prev.map(w => {
+        if (w._id === workshopId) {
+          return {
+            ...w,
+            attachments: w.attachments.filter(a => a._id !== attachmentId)
+          };
+        }
+        return w;
+      }));
+
+      toast.success('Attachment deleted successfully');
+    } catch (error) {
+      console.error('Error deleting attachment:', error);
       setError(error.message);
       toast.error(error.message);
       throw error;
@@ -269,6 +329,7 @@ export const WorkshopProvider = ({ children }) => {
     try {
       setLoading(true);
       setError(null);
+
       const response = await fetch(`${API_URL}/workshops/${workshopId}/register`, {
         method: 'POST',
         headers: {
@@ -282,11 +343,12 @@ export const WorkshopProvider = ({ children }) => {
       }
 
       const data = await response.json();
-      setWorkshops(prev => prev.map(workshop => 
-        workshop._id === workshopId ? data.data : workshop
+      const processedWorkshop = processWorkshopData(data.data);
+      setWorkshops(prev => prev.map(w => 
+        w._id === workshopId ? processedWorkshop : w
       ));
       toast.success('Successfully registered for workshop');
-      return data.data;
+      return processedWorkshop;
     } catch (error) {
       console.error('Error registering for workshop:', error);
       setError(error.message);
@@ -302,6 +364,7 @@ export const WorkshopProvider = ({ children }) => {
     try {
       setLoading(true);
       setError(null);
+
       const response = await fetch(`${API_URL}/workshops/${workshopId}/register`, {
         method: 'DELETE',
         headers: {
@@ -315,13 +378,14 @@ export const WorkshopProvider = ({ children }) => {
       }
 
       const data = await response.json();
-      setWorkshops(prev => prev.map(workshop => 
-        workshop._id === workshopId ? data.data : workshop
+      const processedWorkshop = processWorkshopData(data.data);
+      setWorkshops(prev => prev.map(w => 
+        w._id === workshopId ? processedWorkshop : w
       ));
-      toast.success('Workshop registration cancelled successfully');
-      return data.data;
+      toast.success('Successfully cancelled workshop registration');
+      return processedWorkshop;
     } catch (error) {
-      console.error('Error canceling workshop registration:', error);
+      console.error('Error cancelling workshop registration:', error);
       setError(error.message);
       toast.error(error.message);
       throw error;
@@ -341,6 +405,7 @@ export const WorkshopProvider = ({ children }) => {
     createWorkshop,
     updateWorkshop,
     deleteWorkshop,
+    deleteAttachment,
     registerForWorkshop,
     cancelRegistration
   };

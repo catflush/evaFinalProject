@@ -1,8 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useUser } from "../context/useUser";
 import { useServices } from "../context/ServiceContext";
 import { useWorkshops } from "../context/WorkshopContext";
-import { FaGraduationCap, FaUsers } from "react-icons/fa";
+import { FaGraduationCap, FaUsers, FaCalendarAlt } from "react-icons/fa";
 import { Link } from "react-router-dom";
 
 const DashboardHome = () => {
@@ -103,14 +103,21 @@ const DashboardHome = () => {
           ) : workshops.length > 0 ? (
             workshops.slice(0, 3).map((workshop) => (
               <div key={workshop._id} className="card bg-base-100 shadow-xl hover:shadow-2xl transition-shadow">
-                {workshop.attachments && workshop.attachments.length > 0 && (
-                  <figure className="px-4 pt-4">
+                {workshop.attachments && workshop.attachments.length > 0 ? (
+                  <div className="relative h-48">
                     <img
-                      src={`${import.meta.env.VITE_API_URL}/${workshop.attachments[0].path}`}
+                      src={`${import.meta.env.VITE_API_URL}/uploads/${workshop.attachments[0].path}`}
                       alt={workshop.title}
-                      className="rounded-xl h-48 w-full object-cover"
+                      className="w-full h-full object-cover rounded-t-xl"
+                      onError={(e) => {
+                        e.target.src = '/images/workshop-placeholder.jpg';
+                      }}
                     />
-                  </figure>
+                  </div>
+                ) : (
+                  <div className="h-48 bg-gray-100 flex items-center justify-center rounded-t-xl">
+                    <span className="text-gray-400">No image available</span>
+                  </div>
                 )}
                 <div className="card-body">
                   <h2 className="card-title">
@@ -123,10 +130,16 @@ const DashboardHome = () => {
                       {workshop.level}
                     </div>
                   </h2>
-                  <p className="text-base-content/70">{workshop.description}</p>
-                  <div className="flex items-center gap-2 text-sm text-base-content/70">
-                    <FaUsers className="w-4 h-4" />
-                    <span>{workshop.participants?.length || 0} participants</span>
+                  <p className="text-base-content/70 line-clamp-2">{workshop.description}</p>
+                  <div className="flex flex-col gap-2 mt-4">
+                    <div className="flex items-center gap-2 text-sm text-base-content/70">
+                      <FaCalendarAlt className="w-4 h-4" />
+                      <span>{new Date(workshop.date).toLocaleDateString()}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-base-content/70">
+                      <FaUsers className="w-4 h-4" />
+                      <span>{workshop.participants?.length || 0} / {workshop.capacity} participants</span>
+                    </div>
                   </div>
                   <div className="card-actions justify-between items-center mt-4">
                     <span className="text-xl font-bold text-primary">

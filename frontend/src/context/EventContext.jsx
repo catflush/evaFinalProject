@@ -2,11 +2,6 @@ import { createContext, useState, useContext, useCallback, useMemo } from 'react
 import { toast } from 'react-toastify';
 import { useUser } from './useUser';
 
-const API_URL = import.meta.env.VITE_API_URL;
-if (!API_URL) {
-  throw new Error("API URL is required, are you missing a .env file?");
-}
-
 const EventContext = createContext();
 
 export { EventContext };
@@ -25,6 +20,35 @@ export const EventProvider = ({ children }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const { user } = useUser();
+
+  const API_URL = import.meta.env.VITE_API_URL;
+  if (!API_URL) {
+    throw new Error("API URL is required, are you missing a .env file?");
+  }
+
+  // Helper function to ensure image URLs are properly constructed
+  const getFullImageUrl = (imagePath) => {
+    if (!imagePath) return null;
+    if (imagePath.startsWith('http')) return imagePath;
+    
+    // Clean path handling like posts
+    const cleanPath = imagePath.replace(/^\/+/, '').replace(/^uploads\//, '');
+    return `${API_URL.replace(/\/api$/, '')}/uploads/${cleanPath}`;
+  };
+
+  // Helper function to transform event data with proper image URLs
+  const transformEventData = (event) => {
+    if (!event) return null;
+    
+    const transformed = { ...event };
+    
+    // Handle image field
+    if (transformed.image) {
+      transformed.image = getFullImageUrl(transformed.image);
+    }
+    
+    return transformed;
+  };
 
   // Helper function to ensure data is an array
   const ensureArray = useCallback((data) => {
@@ -149,10 +173,7 @@ export const EventProvider = ({ children }) => {
       }
       const data = await response.json();
       // Transform events to include full image URLs
-      const eventsWithFullUrls = ensureArray(data.data).map(event => ({
-        ...event,
-        imageUrl: event.imageUrl ? `${API_URL}${event.imageUrl}` : null
-      }));
+      const eventsWithFullUrls = ensureArray(data.data).map(event => transformEventData(event));
       setEvents(eventsWithFullUrls);
     } catch (error) {
       setError(error.message);
@@ -179,24 +200,30 @@ export const EventProvider = ({ children }) => {
 
       const formData = new FormData();
       
-      // Add event data fields
+      // Append all event data except image
       Object.keys(eventData).forEach(key => {
-        // Convert date to ISO string if it's a Date object
-        const value = eventData[key] instanceof Date 
-          ? eventData[key].toISOString() 
-          : eventData[key];
-        // Skip image-related fields as they're handled separately
-        if (!['image', 'imageUrl', 'currentImage'].includes(key)) {
-          formData.append(key, value);
+        if (key !== 'imageFile' && key !== 'image') {
+          formData.append(key, eventData[key]);
         }
       });
-      
-      // Set host as the logged-in user's full name
-      formData.append('host', `${user?.firstName} ${user?.lastName}`.trim());
-      
-      // Add image if present
+
+      // Handle image upload
       if (imageFile) {
-        formData.append('image', imageFile);
+        if (imageFile instanceof File) {
+          formData.append('image', imageFile);
+        } else if (typeof imageFile === 'string' && imageFile.startsWith('data:')) {
+          // Convert base64 to blob
+          const base64Data = imageFile.split(',')[1];
+          const blob = await fetch(`data:image/jpeg;base64,${base64Data}`).then(res => res.blob());
+          formData.append('image', blob, 'image.jpg');
+        }
+      } else {
+        console.log('No image file provided');
+      }
+
+      // Log FormData contents for debugging
+      for (let pair of formData.entries()) {
+        console.log('FormData entry:', pair[0], pair[1]);
       }
 
       const response = await fetch(`${API_URL}/events`, {
@@ -212,18 +239,13 @@ export const EventProvider = ({ children }) => {
         throw new Error(errorData.error || 'Failed to create event');
       }
 
-      const responseData = await response.json();
-      const newEvent = responseData.data;
-      
-      // Ensure the image URL is properly set
-      if (newEvent.imageUrl) {
-        newEvent.imageUrl = `${API_URL}${newEvent.imageUrl}`;
-      }
+      const data = await response.json();
+      const transformedEvent = transformEventData(data.data);
       
       // Update the events list
-      setEvents(prev => [...prev, newEvent]);
+      setEvents(prev => [...prev, transformedEvent]);
       toast.success('Event created successfully');
-      return newEvent;
+      return transformedEvent;
     } catch (error) {
       setError(error.message);
       toast.error(error.message);
@@ -245,10 +267,7 @@ export const EventProvider = ({ children }) => {
       }
       const data = await response.json();
       // Transform event to include full image URL
-      const eventWithFullUrl = {
-        ...data.data,
-        imageUrl: data.data.imageUrl ? `${API_URL}${data.data.imageUrl}` : null
-      };
+      const eventWithFullUrl = transformEventData(data.data);
       return eventWithFullUrl;
     } catch (error) {
       setError(error.message);
@@ -343,7 +362,7 @@ export const EventProvider = ({ children }) => {
     } catch (error) {
       setError(error.message);
       toast.error(error.message);
-      throw error;
+      return false;
     } finally {
       setLoading(false);
     }

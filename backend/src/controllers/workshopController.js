@@ -10,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Define the base uploads directory
-const BASE_UPLOADS_DIR = path.join(__dirname, '../../uploads');
+const BASE_UPLOADS_DIR = path.join(__dirname, '../uploads');
 const WORKSHOPS_UPLOADS_DIR = path.join(BASE_UPLOADS_DIR, 'workshops');
 
 // Create uploads directories if they don't exist
@@ -24,27 +24,56 @@ if (!fs.existsSync(WORKSHOPS_UPLOADS_DIR)) {
   console.log('Created workshops uploads directory:', WORKSHOPS_UPLOADS_DIR);
 }
 
-// Helper function to process attachments
-const processAttachments = (files) => {
-  if (!files || files.length === 0) return [];
+// Helper function to get correct file path
+const getFilePath = (relativePath) => {
+  if (!relativePath) return null;
+  // Remove any duplicate 'uploads' in the path
+  const cleanPath = relativePath.replace(/uploads\/uploads/g, 'uploads');
+  return path.join(__dirname, '../../', cleanPath);
+};
+
+// Helper function to log file paths
+const logFileInfo = (file, operation) => {
+  console.log(`\n=== ${operation} File Info ===`);
+  console.log('Original filename:', file.originalname);
+  console.log('Generated filename:', file.filename);
+  console.log('Mimetype:', file.mimetype);
+  console.log('Size:', file.size, 'bytes');
+  console.log('Path:', file.path);
+  console.log('Destination:', file.destination);
+  console.log('=====================\n');
+};
+
+// Helper function to log directory info
+const logDirectoryInfo = (dirPath) => {
+  console.log(`\n=== Directory Info ===`);
+  console.log('Directory path:', dirPath);
+  console.log('Directory exists:', fs.existsSync(dirPath));
+  if (fs.existsSync(dirPath)) {
+    console.log('Directory contents:', fs.readdirSync(dirPath));
+  }
+  console.log('=====================\n');
+};
+
+// Helper function to process image
+const processImage = (file) => {
+  if (!file) return null;
   
-  return files.map(file => ({
-    filename: file.originalname,
+  return {
+    filename: file.filename,
     path: `workshops/${file.filename}`,
     mimetype: file.mimetype,
     size: file.size
-  }));
+  };
 };
 
-// Helper function to delete attachments
-const deleteAttachments = async (attachments) => {
-  if (!attachments || attachments.length === 0) return;
+// Helper function to delete image
+const deleteImage = async (image) => {
+  if (!image) return;
   
-  for (const attachment of attachments) {
-    const filePath = path.join(BASE_UPLOADS_DIR, attachment.path);
-    if (fs.existsSync(filePath)) {
-      await fs.promises.unlink(filePath);
-    }
+  const filePath = path.join(BASE_UPLOADS_DIR, image.path);
+  if (fs.existsSync(filePath)) {
+    await fs.promises.unlink(filePath);
   }
 };
 
@@ -86,7 +115,13 @@ const workshopValidationSchema = Joi.object({
   learningOutcomes: Joi.array().items(Joi.string()),
   location: Joi.string(),
   equipment: Joi.array().items(Joi.string()),
-  materials: Joi.array().items(Joi.string())
+  materials: Joi.array().items(Joi.string()),
+  image: Joi.object({
+    filename: Joi.string().required(),
+    path: Joi.string().required(),
+    mimetype: Joi.string().required(),
+    size: Joi.number().required()
+  }).allow(null)
 });
 
 // Separate validation schema for updates where fields are optional
@@ -121,16 +156,12 @@ const workshopUpdateValidationSchema = Joi.object({
   location: Joi.string().allow('').optional(),
   equipment: Joi.array().items(Joi.string()).optional(),
   materials: Joi.array().items(Joi.string()).optional(),
-  attachments: Joi.array().items(
-    Joi.object({
-      filename: Joi.string().required(),
-      path: Joi.string().required(),
-      mimetype: Joi.string().required(),
-      size: Joi.number().required()
-    })
-  ).optional(),
-}).min(1).messages({
-  'object.min': 'At least one field must be provided for update'
+  image: Joi.object({
+    filename: Joi.string().required(),
+    path: Joi.string().required(),
+    mimetype: Joi.string().required(),
+    size: Joi.number().required()
+  }).allow(null).optional()
 });
 
 // Get all workshops with optional category filter
@@ -268,47 +299,66 @@ export const getWorkshop = async (req, res) => {
   }
 };
 
-// Create new workshop
+// Create a new workshop
 export const createWorkshop = async (req, res) => {
   try {
-    // Validate request body
-    const { error, value } = workshopValidationSchema.validate(req.body);
-    if (error) {
-      // If there are files uploaded, delete them before returning error
-      if (req.files && req.files.length > 0) {
-        await Promise.all(req.files.map(file => fs.promises.unlink(file.path)));
-      }
-      return res.status(400).json({
-        success: false,
-        error: error.details[0].message
-      });
+    const { 
+      title, 
+      description, 
+      date, 
+      time, 
+      duration, 
+      maxParticipants, 
+      price, 
+      categoryId, 
+      location, 
+      requirements, 
+      isActive 
+    } = req.body;
+    
+    // Log directory info before processing files
+    logDirectoryInfo(WORKSHOPS_UPLOADS_DIR);
+    
+    // Log each uploaded file
+    if (req.files && req.files.length > 0) {
+      req.files.forEach(file => logFileInfo(file, 'Upload'));
     }
-
-    // Process attachments
-    const attachments = processAttachments(req.files);
-
+    
     // Create workshop with attachments
-    const workshop = await Workshop.create({
-      ...value,
+    const workshop = new Workshop({
+      title,
+      description,
+      date,
+      time,
+      duration,
+      maxParticipants,
+      price,
+      categoryId,
+      location,
+      requirements,
+      isActive,
       instructor: req.user._id,
-      attachments
+      attachments: req.files?.map(file => ({
+        filename: file.originalname,
+        path: `workshops/${file.filename}`,
+        mimetype: file.mimetype,
+        size: file.size
+      })) || []
     });
 
-    // Populate the response data
-    const populatedWorkshop = await Workshop.findById(workshop._id)
-      .populate('instructor', 'firstName lastName')
-      .populate('categoryId', 'name');
-
+    await workshop.save();
+    
+    // Log the created workshop
+    console.log('\n=== Created Workshop ===');
+    console.log('Workshop ID:', workshop._id);
+    console.log('Attachments:', workshop.attachments);
+    
     res.status(201).json({
       success: true,
-      data: populatedWorkshop
+      data: workshop
     });
   } catch (err) {
     console.error('Error creating workshop:', err);
-    // If there are files uploaded and an error occurs, delete them
-    if (req.files && req.files.length > 0) {
-      await Promise.all(req.files.map(file => fs.promises.unlink(file.path)));
-    }
     res.status(500).json({
       success: false,
       error: 'Server Error'
@@ -316,79 +366,58 @@ export const createWorkshop = async (req, res) => {
   }
 };
 
-// Update workshop
+// Update a workshop
 export const updateWorkshop = async (req, res) => {
   try {
-    // Find the existing workshop
-    const workshop = await Workshop.findById(req.params.id);
+    let workshop = await Workshop.findById(req.params.id);
+    
     if (!workshop) {
-      // Delete uploaded files if workshop not found
-      if (req.files && req.files.length > 0) {
-        await Promise.all(req.files.map(file => fs.promises.unlink(file.path)));
-      }
       return res.status(404).json({
         success: false,
         error: 'Workshop not found'
       });
     }
-
-    // Check if user is the instructor
-    if (workshop.instructor.toString() !== req.user._id.toString()) {
-      if (req.files && req.files.length > 0) {
-        await Promise.all(req.files.map(file => fs.promises.unlink(file.path)));
-      }
+    
+    // Check if user is authorized to update this workshop
+    if (req.user.role !== 'admin' && workshop.instructor.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         success: false,
         error: 'Not authorized to update this workshop'
       });
     }
-
-    // Validate request body using the update schema
-    const { error, value } = workshopUpdateValidationSchema.validate(req.body);
-    if (error) {
-      if (req.files && req.files.length > 0) {
-        await Promise.all(req.files.map(file => fs.promises.unlink(file.path)));
-      }
-      return res.status(400).json({
-        success: false,
-        error: error.details[0].message
+    
+    // Handle file uploads
+    const attachments = [...workshop.attachments];
+    if (req.files && req.files.length > 0) {
+      req.files.forEach(file => {
+        attachments.push({
+          filename: file.originalname,
+          path: `workshops/${file.filename}`,
+          mimetype: file.mimetype,
+          size: file.size
+        });
       });
     }
-
-    // Process new attachments
-    const newAttachments = processAttachments(req.files);
-
-    // Delete old attachments if new ones are provided
-    if (newAttachments.length > 0) {
-      await deleteAttachments(workshop.attachments);
-    }
-
-    // Update workshop with only the fields that were provided
-    const updateData = {
-      ...Object.fromEntries(
-        Object.entries(value).filter(([_, v]) => v !== undefined)
-      ),
-      attachments: newAttachments.length > 0 ? newAttachments : workshop.attachments
-    };
-
-    // Update workshop
-    const updatedWorkshop = await Workshop.findByIdAndUpdate(
+    
+    // Update workshop with new attachments
+    workshop = await Workshop.findByIdAndUpdate(
       req.params.id,
-      updateData,
-      { new: true }
-    ).populate('instructor', 'firstName lastName')
-      .populate('categoryId', 'name');
-
+      {
+        ...req.body,
+        attachments
+      },
+      { new: true, runValidators: true }
+    )
+    .populate('instructor', 'firstName lastName email')
+    .populate('categoryId', 'name')
+    .populate('participants', 'firstName lastName email');
+    
     res.status(200).json({
       success: true,
-      data: updatedWorkshop
+      data: workshop
     });
   } catch (err) {
     console.error('Error updating workshop:', err);
-    // If there are files uploaded and an error occurs, delete them
-    if (req.files && req.files.length > 0) {
-      await Promise.all(req.files.map(file => fs.promises.unlink(file.path)));
-    }
     res.status(500).json({
       success: false,
       error: 'Server Error'
@@ -396,31 +425,38 @@ export const updateWorkshop = async (req, res) => {
   }
 };
 
-// Delete workshop
+// Delete a workshop
 export const deleteWorkshop = async (req, res) => {
   try {
     const workshop = await Workshop.findById(req.params.id);
+    
     if (!workshop) {
       return res.status(404).json({
         success: false,
         error: 'Workshop not found'
       });
     }
-
-    // Check if user is the instructor
-    if (workshop.instructor.toString() !== req.user._id.toString()) {
+    
+    // Check if user is authorized to delete this workshop
+    if (req.user.role !== 'admin' && workshop.instructor.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         success: false,
         error: 'Not authorized to delete this workshop'
       });
     }
-
+    
     // Delete attachments
-    await deleteAttachments(workshop.attachments);
-
-    // Delete workshop
-    await workshop.deleteOne();
-
+    if (workshop.attachments && workshop.attachments.length > 0) {
+      workshop.attachments.forEach(attachment => {
+        const filePath = getFilePath(attachment.path);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      });
+    }
+    
+    await workshop.remove();
+    
     res.status(200).json({
       success: true,
       data: {}
@@ -525,6 +561,57 @@ export const cancelRegistration = async (req, res) => {
     });
   } catch (err) {
     console.error('Error canceling workshop registration:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Server Error'
+    });
+  }
+};
+
+// Delete attachment
+export const deleteAttachment = async (req, res) => {
+  try {
+    const workshop = await Workshop.findById(req.params.id);
+    
+    if (!workshop) {
+      return res.status(404).json({
+        success: false,
+        error: 'Workshop not found'
+      });
+    }
+    
+    // Check if user is authorized to delete this attachment
+    if (req.user.role !== 'admin' && workshop.instructor.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        error: 'Not authorized to delete this attachment'
+      });
+    }
+    
+    const attachment = workshop.attachments.id(req.params.attachmentId);
+    if (!attachment) {
+      return res.status(404).json({
+        success: false,
+        error: 'Attachment not found'
+      });
+    }
+    
+    // Delete the file
+    const filePath = getFilePath(attachment.path);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+    
+    // Remove the attachment from the workshop
+    attachment.remove();
+    await workshop.save();
+    
+    res.status(200).json({
+      success: true,
+      data: {}
+    });
+  } catch (err) {
+    console.error('Error deleting attachment:', err);
     res.status(500).json({
       success: false,
       error: 'Server Error'

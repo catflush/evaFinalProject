@@ -50,9 +50,11 @@ const generateImageUrl = (filePath) => {
     const relativePath = path.relative(uploadsDir, filePath);
     // Convert backslashes to forward slashes for URLs
     const urlPath = relativePath.replace(/\\/g, '/');
-    console.log('Generated URL path:', urlPath);
+    // Remove any leading slashes to avoid double slashes
+    const cleanPath = urlPath.replace(/^\/+/, '');
+    console.log('Generated URL path:', cleanPath);
     // Return the full URL path
-    return `/uploads/${urlPath}`;
+    return `/uploads/${cleanPath}`;
   } catch (error) {
     console.error('Error generating image URL:', error);
     return null;
@@ -61,10 +63,19 @@ const generateImageUrl = (filePath) => {
 
 // Transform event data to include image URL
 const transformEventData = (event) => {
+  if (!event) return null;
+  
   const eventData = event.toObject ? event.toObject() : event;
   return {
     ...eventData,
-    imageUrl: eventData.image ? generateImageUrl(eventData.image) : null
+    imageUrl: eventData.image ? generateImageUrl(eventData.image) : null,
+    // Handle any nested image fields if they exist
+    ...(eventData.images && {
+      images: eventData.images.map(img => ({
+        ...img,
+        url: generateImageUrl(img.path || img.url)
+      }))
+    })
   };
 };
 
@@ -160,14 +171,20 @@ export const createEvent = async (req, res) => {
     const eventsDir = ensureUploadsDirectory();
     console.log('Using events directory:', eventsDir);
 
+    // Log request details for debugging
+    console.log('Request details:', {
+      body: req.body,
+      file: req.file ? {
+        originalname: req.file.originalname,
+        path: req.file.path,
+        mimetype: req.file.mimetype,
+        size: req.file.size
+      } : 'No file uploaded',
+      headers: req.headers
+    });
+
     // Extract the body data excluding the image
     const { image, ...bodyData } = req.body;
-    console.log('Request body:', bodyData);
-    console.log('File upload:', req.file ? {
-      originalname: req.file.originalname,
-      path: req.file.path,
-      mimetype: req.file.mimetype
-    } : 'No file uploaded');
 
     // Set host to the logged-in user's full name
     const host = `${req.user.firstName} ${req.user.lastName}`.trim();
@@ -189,10 +206,13 @@ export const createEvent = async (req, res) => {
     }
 
     // Handle image upload if present
-    let imagePath = null;
     if (req.file) {
-      imagePath = req.file.path;
-      bodyData.image = imagePath;
+      // Store relative path like posts do
+      bodyData.image = `events/${req.file.filename}`;
+      console.log('Image uploaded successfully:', {
+        originalPath: req.file.path,
+        relativePath: bodyData.image
+      });
     }
 
     const event = await Event.create(bodyData);
@@ -206,7 +226,12 @@ export const createEvent = async (req, res) => {
     console.error('Error creating event:', err);
     // If there's a file uploaded and an error occurs, delete it
     if (req.file) {
-      fs.unlinkSync(req.file.path);
+      try {
+        fs.unlinkSync(req.file.path);
+        console.log('Deleted uploaded file due to error:', req.file.path);
+      } catch (unlinkErr) {
+        console.error('Error deleting uploaded file:', unlinkErr);
+      }
     }
     res.status(500).json({
       success: false,
@@ -235,12 +260,16 @@ export const updateEvent = async (req, res) => {
       // Delete old image if it exists
       if (event.image) {
         try {
-          fs.unlinkSync(event.image);
+          const oldImagePath = path.join(uploadsDir, event.image);
+          if (fs.existsSync(oldImagePath)) {
+            fs.unlinkSync(oldImagePath);
+          }
         } catch (err) {
           console.error('Error deleting old image:', err);
         }
       }
-      bodyData.image = req.file.path;
+      // Store relative path
+      bodyData.image = path.relative(uploadsDir, req.file.path);
     }
 
     const updatedEvent = await Event.findByIdAndUpdate(
@@ -257,10 +286,6 @@ export const updateEvent = async (req, res) => {
     });
   } catch (err) {
     console.error('Error updating event:', err);
-    // If there's a file uploaded and an error occurs, delete it
-    if (req.file) {
-      fs.unlinkSync(req.file.path);
-    }
     res.status(500).json({
       success: false,
       error: 'Server Error'

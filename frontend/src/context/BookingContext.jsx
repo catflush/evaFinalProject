@@ -47,22 +47,33 @@ export const BookingProvider = ({ children }) => {
         phone: user?.phone || bookingData.customerDetails?.phone || ''
       };
 
+      // Prepare the request body based on booking type
+      const requestBody = {
+        bookingType: bookingData.bookingType,
+        date: bookingData.date,
+        time: bookingData.time,
+        numberOfParticipants: bookingData.numberOfParticipants || 1,
+        paymentMethod: bookingData.paymentMethod || 'credit_card',
+        customerDetails,
+        notes: bookingData.notes
+      };
+
+      // Add the appropriate ID field based on booking type
+      if (bookingData.bookingType === 'event') {
+        requestBody.eventId = bookingData.eventId;
+      } else if (bookingData.bookingType === 'workshop') {
+        requestBody.workshopId = bookingData.workshopId;
+      } else if (bookingData.bookingType === 'service') {
+        requestBody.serviceId = bookingData.serviceId;
+      }
+
       const response = await fetch(`${API_URL}/bookings`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${user?.token}`
         },
-        body: JSON.stringify({
-          bookingType: bookingData.bookingType,
-          [bookingData.bookingType === 'event' ? 'eventId' : 'serviceId']: bookingData[bookingData.bookingType === 'event' ? 'eventId' : 'serviceId'],
-          date: bookingData.date,
-          time: bookingData.time,
-          numberOfParticipants: bookingData.numberOfParticipants || 1,
-          paymentMethod: bookingData.paymentMethod || 'credit_card',
-          customerDetails,
-          notes: bookingData.notes
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
@@ -274,15 +285,12 @@ export const BookingProvider = ({ children }) => {
       }
 
       const data = await response.json();
-      setBookings(prev => 
-        prev.map(booking => 
-          booking._id === bookingId ? { ...booking, isActive: false } : booking
-        )
-      );
+      setBookings(prev => prev.filter(booking => booking._id !== bookingId));
       
       showNotification('Booking deleted successfully', 'success');
       return data.data;
     } catch (error) {
+      console.error('Error deleting booking:', error);
       setError(error.message);
       showNotification(error.message || 'Failed to delete booking', 'error');
       throw error;
